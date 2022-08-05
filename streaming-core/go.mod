@@ -1,4 +1,4 @@
-module streaming-core
+module github.com/RuiFG/streaming/streaming-core
 
 go 1.18
 

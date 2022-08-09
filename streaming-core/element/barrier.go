@@ -5,23 +5,22 @@ type Barrier[T any] struct {
 	Detail
 }
 
-func (b *Barrier[T]) GetMeta() Meta {
+func (b Barrier[T]) GetMeta() Meta {
 	return b.Meta
 }
 
-func (b *Barrier[T]) Type() Type {
+func (b Barrier[T]) Type() Type {
 	return BarrierElement
 }
 
-func (b *Barrier[T]) AsEvent() *Event[T] {
+func (b Barrier[T]) AsEvent() Event[T] {
 	panic("implement me")
 }
 
-func (b *Barrier[T]) AsWatermark() *Watermark[T] {
-
+func (b Barrier[T]) AsWatermark() Watermark[T] {
 	panic("implement me")
 }
 
-func (b *Barrier[T]) AsBarrier() *Barrier[T] {
+func (b Barrier[T]) AsBarrier() Barrier[T] {
 	return b
 }

@@ -9,8 +9,8 @@ type Default[IN any] struct {
 	component.Default
 }
 
-func (o *Default[IN]) ProcessEvent(_ *element.Event[IN])                 {}
-func (o *Default[IN]) ProcessWatermark(watermark *element.Watermark[IN]) {}
-func (o *Default[IN]) NotifyBarrierCome(detail element.Detail)           {}
-func (o *Default[IN]) NotifyBarrierComplete(detail element.Detail)       {}
-func (o *Default[IN]) NotifyBarrierCancel(detail element.Detail)         {}
+func (o *Default[IN]) ProcessEvent(_ element.Event[IN])         {}
+func (o *Default[IN]) ProcessWatermark(_ element.Watermark[IN]) {}
+func (o *Default[IN]) NotifyBarrierCome(_ element.Detail)       {}
+func (o *Default[IN]) NotifyBarrierComplete(_ element.Detail)   {}
+func (o *Default[IN]) NotifyBarrierCancel(_ element.Detail)     {}

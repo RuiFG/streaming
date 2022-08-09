@@ -2,8 +2,8 @@ package stream
 
 import (
 	_c "context"
+	"github.com/RuiFG/streaming/streaming-core/common/safe"
 	"github.com/RuiFG/streaming/streaming-core/element"
-	"github.com/RuiFG/streaming/streaming-core/safe"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/RuiFG/streaming/streaming-core/task"
 	"github.com/pkg/errors"
@@ -11,11 +11,13 @@ import (
 )
 
 type Options struct {
-	QOS      task.QOS
-	State    bool
+	QOS task.QOS
+	//state save dir
 	StateDir string
 }
 
+//Env is stream environment, every stream application needs the support of the *Env.
+//
 type Env struct {
 	ctx                _c.Context
 	cancel             _c.CancelFunc

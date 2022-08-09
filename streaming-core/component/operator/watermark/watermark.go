@@ -8,8 +8,8 @@ import (
 )
 
 type GeneratorFn[T any] interface {
-	OnEvent(value T, collector func(watermark *element.Watermark[T]))
-	OnPeriodicEmit(collector func(watermark *element.Watermark[T]))
+	OnEvent(value T, collector func(watermark element.Watermark[T]))
+	OnPeriodicEmit(collector func(watermark element.Watermark[T]))
 }
 
 type TimestampAssignerFn[T any] func(value T) time.Time
@@ -42,9 +42,9 @@ func (o *operator[T]) Open(ctx component.Context, collector element.Collector[T]
 	return nil
 }
 
-func (o *operator[T]) ProcessEvent1(event *element.Event[T]) {
+func (o *operator[T]) ProcessEvent1(event element.Event[T]) {
 	o.Default.Collector.EmitValue(event.Value)
 	o.watermarkGenerator.OnEvent(event.Value, o.Default.Collector.EmitWatermark)
 }
 
-func (o *operator[T]) ProcessWatermark1(_ *element.Watermark[T]) {}
+func (o *operator[T]) ProcessWatermark1(_ element.Watermark[T]) {}

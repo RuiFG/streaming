@@ -2,10 +2,10 @@ package task
 
 import (
 	_c "context"
+	"github.com/RuiFG/streaming/streaming-core/common/safe"
 	"github.com/RuiFG/streaming/streaming-core/component"
 	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/log"
-	"github.com/RuiFG/streaming/streaming-core/safe"
 	"github.com/RuiFG/streaming/streaming-core/service"
 	"github.com/pkg/errors"
 	"time"

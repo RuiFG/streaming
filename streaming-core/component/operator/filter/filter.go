@@ -20,7 +20,7 @@ type operator[IN any] struct {
 	Fn Fn[IN]
 }
 
-func (f *operator[IN]) ProcessEvent1(event *element.Event[IN]) {
+func (f *operator[IN]) ProcessEvent1(event element.Event[IN]) {
 	if !f.Fn(event.Value) {
 		f.Default.Collector.EmitValue(event.Value)
 	}

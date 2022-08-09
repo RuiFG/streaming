@@ -60,7 +60,7 @@ type AlignerBridge[IN1, IN2 any] struct {
 	barrier.Trigger
 	inputCount       int
 	currentBarrierId int64
-	blockedUpstream  map[string]bool
+	blockedUpstream  map[string]struct{}
 	buffer           []any
 }
 
@@ -142,13 +142,13 @@ func (h *AlignerBridge[IN1, IN2]) processBarrierDetail(barrierDetail element.Det
 
 func (h *AlignerBridge[IN1, IN2]) onUpstream(upstream string) {
 	if _, ok := h.blockedUpstream[upstream]; !ok {
-		h.blockedUpstream[upstream] = true
+		h.blockedUpstream[upstream] = struct{}{}
 		//h.logger.Debugf("received barrierDetail from channel %s", barrierDetail.Name)
 	}
 }
 
 func (h *AlignerBridge[IN1, IN2]) releaseBlocksAndResetBarriers() {
-	h.blockedUpstream = make(map[string]bool)
+	h.blockedUpstream = make(map[string]struct{})
 }
 
 func (h *AlignerBridge[IN1, IN2]) beginNewAlignment(barrierDetail element.Detail, upstream string) {
@@ -162,7 +162,7 @@ func NewAlignerBridge[IN1, IN2 any](inputHandler element.InputHandler[IN1, IN2],
 		inputHandler:    inputHandler,
 		Trigger:         trigger,
 		inputCount:      inputCount,
-		blockedUpstream: map[string]bool{},
+		blockedUpstream: map[string]struct{}{},
 	}
 }
 

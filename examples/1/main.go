@@ -13,7 +13,7 @@ import (
 func main() {
 	var counter int64 = 0
 	defer profile.Start().Stop()
-	env := stream.New(stream.Options{State: false})
+	env := stream.New(stream.Options{})
 	config := sarama.NewConfig()
 	config.Version = sarama.V2_4_0_0
 	config.Consumer.Offsets.AutoCommit.Enable = false

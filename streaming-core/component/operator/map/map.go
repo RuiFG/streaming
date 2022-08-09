@@ -21,7 +21,7 @@ type operator[IN any, OUT any] struct {
 	Fn        Fn[IN, OUT]
 }
 
-func (m *operator[IN, OUT]) ProcessEvent1(event *element.Event[IN]) {
+func (m *operator[IN, OUT]) ProcessEvent1(event element.Event[IN]) {
 	m.Default.Collector.EmitValue(m.Fn(event.Value))
 }
 

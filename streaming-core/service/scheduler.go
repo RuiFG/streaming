@@ -3,7 +3,7 @@ package service
 import (
 	_c "context"
 	"fmt"
-	"github.com/RuiFG/streaming/streaming-core/safe"
+	"github.com/RuiFG/streaming/streaming-core/common/safe"
 	"reflect"
 	"time"
 )

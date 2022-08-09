@@ -17,7 +17,7 @@ type Operator[IN, ACC, OUT any, KEY comparable] struct {
 	Deserializer store.MapDeserializer[KEY, ACC]
 }
 
-func (a *Operator[IN, ACC, OUT, K]) ProcessEvent1(event *element.Event[IN]) {
+func (a *Operator[IN, ACC, OUT, K]) ProcessEvent1(event element.Event[IN]) {
 	key := a.KeySelectorFn(event.Value)
 	windows := a.assignWindows(event.Value)
 	for _, window := range windows {

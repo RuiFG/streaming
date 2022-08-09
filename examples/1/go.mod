@@ -2,11 +2,14 @@ module github.com/RuiFG/streaming/examples/1
 
 go 1.18
 
-
+replace (
+	github.com/RuiFG/streaming/streaming-connector/kafka-connector => ../../streaming-connector/kafka-connector
+	github.com/RuiFG/streaming/streaming-core => ../../streaming-core
+)
 
 require (
-	github.com/RuiFG/streaming/streaming-connector/kafka-connector v0.0.0-00010101000000-000000000000
-	github.com/RuiFG/streaming/streaming-core v0.0.0-20220805063730-a45ea24fc280
+	github.com/RuiFG/streaming/streaming-connector/kafka-connector v0.0.0
+	github.com/RuiFG/streaming/streaming-core v0.0.0
 	github.com/Shopify/sarama v1.35.0
 	github.com/pkg/profile v1.6.0
 )

@@ -20,7 +20,7 @@ type operator[IN any, OUT any] struct {
 	Fn Fn[IN, OUT]
 }
 
-func (m *operator[IN, OUT]) ProcessEvent1(event *element.Event[IN]) {
+func (m *operator[IN, OUT]) ProcessEvent1(event element.Event[IN]) {
 	values := m.Fn(event.Value)
 	for _, e := range values {
 		m.Default.Collector.EmitValue(e)

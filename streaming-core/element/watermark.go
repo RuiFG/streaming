@@ -8,23 +8,23 @@ type Watermark[T any] struct {
 	Time time.Time `json:"time"`
 }
 
-func (w *Watermark[T]) GetMeta() Meta {
+func (w Watermark[T]) GetMeta() Meta {
 	return w.Meta
 }
 
-func (w *Watermark[T]) Type() Type {
+func (w Watermark[T]) Type() Type {
 	return WatermarkElement
 }
 
-func (w *Watermark[T]) AsEvent() *Event[T] {
+func (w Watermark[T]) AsEvent() Event[T] {
 	panic("implement me")
 }
 
-func (w *Watermark[T]) AsWatermark() *Watermark[T] {
+func (w Watermark[T]) AsWatermark() Watermark[T] {
 	return w
 }
 
-func (w *Watermark[T]) AsBarrier() *Barrier[T] {
+func (w Watermark[T]) AsBarrier() Barrier[T] {
 	//TODO implement me
 	panic("implement me")
 }

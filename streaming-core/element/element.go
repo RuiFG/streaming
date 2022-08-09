@@ -13,7 +13,7 @@ const (
 type Element[T any] interface {
 	GetMeta() Meta
 	Type() Type
-	AsEvent() *Event[T]
-	AsWatermark() *Watermark[T]
-	AsBarrier() *Barrier[T]
+	AsEvent() Event[T]
+	AsWatermark() Watermark[T]
+	AsBarrier() Barrier[T]
 }

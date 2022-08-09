@@ -18,16 +18,16 @@ func (o *Default[IN1, IN2, OUT]) Open(ctx component.Context, collector element.C
 	return nil
 }
 
-func (o *Default[IN1, IN2, OUT]) ProcessEvent1(_ *element.Event[IN1]) {}
+func (o *Default[IN1, IN2, OUT]) ProcessEvent1(_ element.Event[IN1]) {}
 
-func (o *Default[IN1, IN2, OUT]) ProcessWatermark1(watermark *element.Watermark[IN1]) {
-	o.Collector.EmitWatermark(&element.Watermark[OUT]{Time: watermark.Time})
+func (o *Default[IN1, IN2, OUT]) ProcessWatermark1(watermark element.Watermark[IN1]) {
+	o.Collector.EmitWatermark(element.Watermark[OUT]{Time: watermark.Time})
 }
 
-func (o *Default[IN1, IN2, OUT]) ProcessEvent2(_ *element.Event[IN2]) {}
+func (o *Default[IN1, IN2, OUT]) ProcessEvent2(_ element.Event[IN2]) {}
 
-func (o *Default[IN1, IN2, OUT]) ProcessWatermark2(watermark *element.Watermark[IN2]) {
-	o.Collector.EmitWatermark(&element.Watermark[OUT]{Time: watermark.Time})
+func (o *Default[IN1, IN2, OUT]) ProcessWatermark2(watermark element.Watermark[IN2]) {
+	o.Collector.EmitWatermark(element.Watermark[OUT]{Time: watermark.Time})
 }
 
 func (o *Default[IN1, IN2, OUT]) NotifyBarrierCome(detail element.Detail) {}

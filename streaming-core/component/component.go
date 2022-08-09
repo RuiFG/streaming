@@ -28,10 +28,10 @@ type Operator[IN1, IN2 any, OUT any] interface {
 	Open(ctx Context, collector element.Collector[OUT]) error
 	Close() error
 
-	ProcessEvent1(event *element.Event[IN1])
-	ProcessWatermark1(watermark *element.Watermark[IN1])
-	ProcessEvent2(event *element.Event[IN2])
-	ProcessWatermark2(watermark *element.Watermark[IN2])
+	ProcessEvent1(event element.Event[IN1])
+	ProcessWatermark1(watermark element.Watermark[IN1])
+	ProcessEvent2(event element.Event[IN2])
+	ProcessWatermark2(watermark element.Watermark[IN2])
 }
 
 type Sink[IN any] interface {
@@ -39,8 +39,8 @@ type Sink[IN any] interface {
 	Open(ctx Context) error
 	Close() error
 
-	ProcessEvent(event *element.Event[IN])
-	ProcessWatermark(watermark *element.Watermark[IN])
+	ProcessEvent(event element.Event[IN])
+	ProcessWatermark(watermark element.Watermark[IN])
 }
 
 type NewSource[T any] func() Source[T]

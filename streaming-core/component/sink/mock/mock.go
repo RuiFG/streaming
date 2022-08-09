@@ -17,11 +17,11 @@ type sink[IN any] struct {
 	ProcessWatermarkFn
 }
 
-func (s *sink[IN]) ProcessEvent(event *element.Event[IN]) {
+func (s *sink[IN]) ProcessEvent(event element.Event[IN]) {
 	s.ProcessEventFn(event.Value)
 }
 
-func (s *sink[IN]) ProcessWatermark(time *element.Watermark[IN]) {
+func (s *sink[IN]) ProcessWatermark(time element.Watermark[IN]) {
 	s.ProcessWatermarkFn(time.Time)
 }
 

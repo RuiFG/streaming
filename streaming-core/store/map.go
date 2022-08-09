@@ -23,12 +23,12 @@ func (m *MapState[K, V]) Clear() {
 	m.mm = map[K]V{}
 }
 
-func (m *MapState[K, V]) Mirror() MirrorState {
+func (m *MapState[K, V]) mirror() mirrorState {
 	mm := map[K]V{}
 	for k, v := range m.mm {
 		mm[k] = v
 	}
-	return MirrorState{_type: MapType, _bytes: m.serializer(mm)}
+	return mirrorState{StateType: MapType, Bytes: m.serializer(mm)}
 }
 
 func (m *MapState[K, V]) Load(k K) (V, bool) {

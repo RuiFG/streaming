@@ -11,6 +11,7 @@ import (
 func Run(fn func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			fmt.Println(r)
 			debug.PrintStack()
 			switch x := r.(type) {
 			case string:

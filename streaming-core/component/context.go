@@ -9,22 +9,31 @@ import (
 
 type context struct {
 	_c.Context
+	storeController store.Controller
+	logger          log.Logger
+	timeScheduler   service.TimeScheduler
 }
 
 func (c *context) TimeScheduler() service.TimeScheduler {
-	//TODO implement me
-	panic("implement me")
+	return c.timeScheduler
 }
 
-func (c *context) Store() store.Manager {
-	//TODO implement me
-	panic("implement me")
+func (c *context) Store() store.Controller {
+	return c.storeController
 }
 
 func (c *context) Logger() log.Logger {
-	return nil
+	return c.logger
 }
 
-func NewContext(ctx _c.Context, name string) Context {
-	return &context{ctx}
+func NewContext(ctx _c.Context,
+	controller store.Controller,
+	scheduler service.TimeScheduler,
+	logger log.Logger) Context {
+	return &context{
+		Context:         ctx,
+		storeController: controller,
+		logger:          logger,
+		timeScheduler:   scheduler,
+	}
 }

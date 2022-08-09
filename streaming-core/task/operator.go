@@ -2,23 +2,20 @@ package task
 
 import (
 	_c "context"
-	"github.com/RuiFG/streaming/streaming-core/barrier"
 	"github.com/RuiFG/streaming/streaming-core/component"
 	"github.com/RuiFG/streaming/streaming-core/element"
+	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/safe"
 	"github.com/RuiFG/streaming/streaming-core/service"
-	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/pkg/errors"
 	"time"
 )
 
 type OperatorOptions[IN1, IN2, OUT any] struct {
-	NameSuffix  string
-	qos         string
-	Handlers    []ElementHandler[IN1, IN2]
-	New         component.NewOperator[IN1, IN2, OUT]
-	Channel     bool
-	ChannelSize uint
+	Options
+	InputHandler  element.InputHandler[IN1, IN2]
+	OutputHandler element.OutputHandler[OUT]
+	New           component.NewOperator[IN1, IN2, OUT]
 }
 
 func (o OperatorOptions[IN1, IN2, OUT]) Name() string {
@@ -26,20 +23,14 @@ func (o OperatorOptions[IN1, IN2, OUT]) Name() string {
 }
 
 type OperatorTask[IN1, IN2, OUT any] struct {
+	ctx        _c.Context
+	cancelFunc _c.CancelFunc
 	OperatorOptions[IN1, IN2, OUT]
 	service.TimeScheduler
-	ctx                  _c.Context
-	running              bool
-	emitNext             element.EmitNext[OUT]
-	operator             component.Operator[IN1, IN2, OUT]
-	synchronousProcessor SynchronousProcessor[IN1, IN2]
-	storeManger          store.Manager
+	*mutex[IN1, IN2, OUT]
 
-	inputCount int
-	cleanFns   []func()
-
-	barrierSignalChan chan barrier.Signal
-
+	running     bool
+	operator    component.Operator[IN1, IN2, OUT]
 	elementMeta element.Meta
 }
 
@@ -47,34 +38,24 @@ func (o *OperatorTask[IN1, IN2, OUT]) Daemon() error {
 	o.running = true
 	o.operator = o.New()
 	o.elementMeta = element.Meta{Partition: 0, Upstream: o.Name()}
-	var elementHandler ElementHandler[IN1, IN2]
-	switch o.qos {
-	case "1":
-		elementHandler = &TrackerHandler[IN1, IN2]{
-			handlers:       append(o.Handlers, o),
-			Trigger:        o,
-			inputCount:     o.inputCount,
-			pendingBarrier: map[barrier.Detail]int{},
-		}
-	case "2":
-		elementHandler = &AlignerHandler[IN1, IN2]{
-			handlers:        append(o.Handlers, o),
-			Trigger:         o,
-			inputCount:      o.inputCount,
-			blockedUpstream: map[string]bool{},
-		}
-	}
-	if o.Channel {
-		syncProcessor := newChannelSyncProcessor[IN1, IN2](elementHandler, o.ChannelSize)
-		syncProcessor.Start()
-		o.cleanFns = append(o.cleanFns, syncProcessor.Stop)
-		o.synchronousProcessor = syncProcessor
+	var inputHandler element.InputHandler[IN1, IN2]
+	if o.OperatorOptions.InputHandler == nil {
+		inputHandler = o
 	} else {
-		o.synchronousProcessor = newMutexSyncProcess[IN1, IN2](elementHandler)
+		inputHandler = element.InputHandlerChain[IN1, IN2]{o.OperatorOptions.InputHandler, o}
 	}
+	switch o.Options.QOS {
+	case AtMostOnce, AtLeastOnce:
+		inputHandler = NewTrackerBridge(
+			inputHandler, o, o.Options.InputCount)
+	case ExactlyOnce:
+		inputHandler = NewAlignerBridge(
+			inputHandler, o, o.Options.InputCount)
+	}
+	o.mutex = newMutexSyncProcess(inputHandler, o.OperatorOptions.OutputHandler)
 	if err := safe.Run(func() error {
-		return o.operator.Open(component.NewContext(o.ctx, o.Name()),
-			element.Collector[OUT]{Meta: o.elementMeta, EmitNext: o.emitNext})
+		return o.operator.Open(component.NewContext(o.ctx, o.StoreManager.Controller(o.Name()), o, log.Named(o.Name())),
+			element.Collector[OUT]{Meta: o.elementMeta, Emit: o.OperatorOptions.OutputHandler.OnElement})
 	}); err != nil {
 		return errors.WithMessage(err, "failed to start operator task")
 	}
@@ -86,13 +67,13 @@ func (o *OperatorTask[IN1, IN2, OUT]) Running() bool {
 }
 
 func (o *OperatorTask[IN1, IN2, OUT]) Emit1(e1 element.Element[IN1]) {
-	o.synchronousProcessor.ProcessElement1(e1)
+	o.mutex.ProcessInput1(e1)
 }
 func (o *OperatorTask[IN1, IN2, OUT]) Emit2(e2 element.Element[IN2]) {
-	o.synchronousProcessor.ProcessElement2(e2)
+	o.mutex.ProcessInput2(e2)
 }
 
-// -------------------------------------ElementHandler---------------------------------------------
+// -------------------------------------InputHandler---------------------------------------------
 
 func (o *OperatorTask[IN1, IN2, OUT]) OnElement1(e1 element.Element[IN1]) {
 	switch e1.Type() {
@@ -114,60 +95,59 @@ func (o *OperatorTask[IN1, IN2, OUT]) OnElement2(e2 element.Element[IN2]) {
 
 // -------------------------------------BarrierTrigger---------------------------------------------
 
-func (o *OperatorTask[IN1, IN2, OUT]) TriggerBarrier(detail barrier.Detail) {
-	o.emitNext(&element.Barrier[OUT]{Meta: o.elementMeta, Detail: detail})
-	message := barrier.ACK
-	safe.Go(func() error {
-		if err := o.storeManger.Save(detail.Id); err != nil {
-			message = barrier.DEC
-		}
-		o.barrierSignalChan <- barrier.Signal{
-			Name:    o.Name(),
-			Message: message,
-			Detail:  detail}
-		return nil
-	})
+func (o *OperatorTask[IN1, IN2, OUT]) TriggerBarrier(detail element.Detail) {
+	o.OutputHandler.OnElement(&element.Barrier[OUT]{Meta: o.elementMeta, Detail: detail})
+	o.NotifyBarrierCome(detail)
+	message := element.ACK
+	if err := o.StoreManager.Save(detail.Id); err != nil {
+		message = element.DEC
+	}
+	o.BarrierSignalChan <- element.Signal{
+		Name:    o.Name(),
+		Message: message,
+		Detail:  detail}
 
 }
 
 // -------------------------------------BarrierListener------------------------------------------
 
-func (o *OperatorTask[IN1, IN2, OUT]) NotifyComplete(detail barrier.Detail) {
-	o.operator.NotifyComplete(detail)
-	switch detail.Type {
-	case barrier.ExitpointBarrier:
+func (o *OperatorTask[IN1, IN2, OUT]) NotifyBarrierCome(detail element.Detail) {
+	o.operator.NotifyBarrierCome(detail)
+}
+
+func (o *OperatorTask[IN1, IN2, OUT]) NotifyBarrierComplete(detail element.Detail) {
+	o.operator.NotifyBarrierComplete(detail)
+	switch detail.BarrierType {
+	case element.ExitpointBarrier:
 		if err := o.operator.Close(); err != nil {
 			//todo handler error
-		}
-		for _, fn := range o.cleanFns {
-			fn()
 		}
 		o.running = false
 	}
 }
 
-func (o *OperatorTask[IN1, IN2, OUT]) NotifyCancel(detail barrier.Detail) {
-	o.operator.NotifyCancel(detail)
+func (o *OperatorTask[IN1, IN2, OUT]) NotifyBarrierCancel(detail element.Detail) {
+	o.operator.NotifyBarrierCancel(detail)
 
 }
 
 // --------------------------------------timeScheduler--------------------------------------------
 
 func (o *OperatorTask[IN1, IN2, OUT]) RegisterTicker(duration time.Duration, cb service.TimeCallback) {
-	o.TimeScheduler.RegisterTicker(duration, &callbackAgent{cb: cb, agent: o.synchronousProcessor.ProcessCaller})
+	o.TimeScheduler.RegisterTicker(duration, &callbackAgent{cb: cb, agent: o.mutex.ProcessCaller})
 }
 
 func (o *OperatorTask[IN1, IN2, OUT]) RegisterTimer(duration time.Duration, cb service.TimeCallback) {
-	o.TimeScheduler.RegisterTimer(duration, &callbackAgent{cb: cb, agent: o.synchronousProcessor.ProcessCaller})
+	o.TimeScheduler.RegisterTimer(duration, &callbackAgent{cb: cb, agent: o.mutex.ProcessCaller})
 }
 
-func NewOperatorTask[IN1, IN2, OUT any](ctx _c.Context, options OperatorOptions[IN1, IN2, OUT], emitNext element.EmitNext[OUT]) *OperatorTask[IN1, IN2, OUT] {
+func NewOperatorTask[IN1, IN2, OUT any](options OperatorOptions[IN1, IN2, OUT]) *OperatorTask[IN1, IN2, OUT] {
+	ctx, cancelFunc := _c.WithCancel(_c.Background())
 	return &OperatorTask[IN1, IN2, OUT]{
+		ctx:             ctx,
+		cancelFunc:      cancelFunc,
 		OperatorOptions: options,
 		TimeScheduler:   service.NewTimeSchedulerService(ctx),
-		ctx:             ctx,
 		running:         false,
-		emitNext:        emitNext,
-		cleanFns:        []func(){},
 	}
 }

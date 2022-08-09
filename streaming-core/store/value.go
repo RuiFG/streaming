@@ -22,8 +22,8 @@ func (v *ValueState[T]) Clear() {
 	v.v = ni
 }
 
-func (v *ValueState[T]) Mirror() MirrorState {
-	return MirrorState{_type: ValueType, _bytes: v.serializer(v.v)}
+func (v *ValueState[T]) mirror() mirrorState {
+	return mirrorState{StateType: ValueType, Bytes: v.serializer(v.v)}
 }
 
 func (v *ValueState[T]) Value() T {

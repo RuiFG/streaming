@@ -21,7 +21,7 @@ type StrategyFn[T any] interface {
 }
 
 type operator[T any] struct {
-	Default[T, any, T]
+	Default[T, T, T]
 	strategy           StrategyFn[T]
 	watermarkGenerator GeneratorFn[T]
 	timestampAssigner  TimestampAssignerFn[T]

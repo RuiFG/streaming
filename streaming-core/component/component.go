@@ -12,13 +12,14 @@ import (
 type Context interface {
 	_c.Context
 	Logger() log.Logger
-	Store() store.Manager
+	Store() store.Controller
 	TimeScheduler() service.TimeScheduler
 }
 
 type Source[OUT any] interface {
 	barrier.Listener
 	Open(ctx Context, collector element.Collector[OUT]) error
+	Run()
 	Close() error
 }
 
@@ -53,14 +54,12 @@ type Rich interface {
 	Close() error
 }
 
-type Default[IN, OUT any] struct {
-	Rich      Rich
-	Ctx       Context
-	Collector element.Collector[OUT]
+type Default struct {
+	Rich Rich
+	Ctx  Context
 }
 
-func (r *Default[IN, OUT]) Open(ctx Context, collector element.Collector[OUT]) error {
-	r.Collector = collector
+func (r *Default) Open(ctx Context) error {
 	r.Ctx = ctx
 	if r.Rich != nil {
 		if err := r.Rich.Open(ctx); err != nil {
@@ -70,7 +69,7 @@ func (r *Default[IN, OUT]) Open(ctx Context, collector element.Collector[OUT]) e
 	return nil
 }
 
-func (r *Default[IN1, OUT]) Close() error {
+func (r *Default) Close() error {
 	if r.Rich != nil {
 		return r.Rich.Close()
 	} else {

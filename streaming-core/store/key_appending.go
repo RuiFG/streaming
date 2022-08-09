@@ -13,7 +13,7 @@ func (k *keyAppendingState[KEY, NS, IN, OUT]) Initialized() bool {
 	return true
 }
 
-func (k *keyAppendingState[KEY, NS, IN, OUT]) Mirror() MirrorState {
+func (k *keyAppendingState[KEY, NS, IN, OUT]) mirror() mirrorState {
 	//TODO implement me
 	panic("implement me")
 }
@@ -24,5 +24,6 @@ func (k *keyAppendingState[KEY, NS, IN, OUT]) Clear() {
 }
 
 func (k *keyAppendingState[KEY, NS, IN, OUT]) Get() OUT {
-
+	//TODO implement me
+	panic("implement me")
 }

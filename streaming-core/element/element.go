@@ -1,6 +1,6 @@
 package element
 
-type EmitNext[T any] func(element Element[T])
+type Emit[T any] func(element Element[T])
 
 type Type uint
 

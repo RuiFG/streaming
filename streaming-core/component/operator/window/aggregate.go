@@ -43,7 +43,7 @@ func (a *Operator[IN, ACC, OUT, K]) ProcessEvent1(event *element.Event[IN]) {
 			} else {
 				outputs := a.Fn(key, window, []ACC{acc})
 				for _, out := range outputs {
-					a.Collector(out)
+					a.Collector.EmitValue(out)
 				}
 			}
 		}

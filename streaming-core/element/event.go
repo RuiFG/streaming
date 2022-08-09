@@ -31,14 +31,14 @@ func (e *Event[T]) AsBarrier() *Barrier[T] {
 }
 
 type Collector[T any] struct {
-	EmitNext EmitNext[T]
-	Meta     Meta
+	Emit Emit[T]
+	Meta Meta
 }
 
 func (c Collector[T]) EmitValue(value T) {
-	c.EmitNext(&Event[T]{Meta: c.Meta, Value: value})
+	c.Emit(&Event[T]{Meta: c.Meta, Value: value})
 }
 
 func (c Collector[T]) EmitWatermark(watermark *Watermark[T]) {
-	c.EmitNext(watermark)
+	c.Emit(watermark)
 }

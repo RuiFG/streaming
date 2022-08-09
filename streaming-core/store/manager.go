@@ -1,44 +1,80 @@
 package store
 
-import "sync"
+import (
+	"bytes"
+	"encoding/gob"
+	"sync"
+)
 
 type manager struct {
-	m *sync.Map
+	mutex   *sync.Mutex
+	mm      map[string]*controller
+	name    string
+	backend Backend
 }
 
-func (m *manager) Save(id int64) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *manager) Clean() error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *manager) Persist(id int64) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *manager) Range(fn func(key string, state State) bool) {
-	m.m.Range(func(key, value any) bool {
-		return fn(key.(string), value.(State))
-	})
-}
-
-func (m *manager) Load(key string) (State, bool) {
-	if load, ok := m.m.Load(key); !ok {
-		return nil, ok
+func (m *manager) Controller(namespace string) Controller {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if c, ok := m.mm[namespace]; ok {
+		return c
 	} else {
-		return load.(State), ok
+		c = &controller{&sync.Map{}}
+		return c
 	}
 }
 
-func (m *manager) Store(key string, state State) {
-	m.m.Store(key, state)
+func (m *manager) Save(id int64) error {
+	mmm := map[string]map[string]mirrorState{}
+	for namespace, c := range m.mm {
+		if mmm[namespace] == nil {
+			mmm[namespace] = map[string]mirrorState{}
+		}
+		c.Range(func(key string, state State) bool {
+			mmm[namespace][key] = state.mirror()
+			return true
+		})
+	}
+	var buffer bytes.Buffer
+	decoder := gob.NewEncoder(&buffer)
+	if err := decoder.Encode(mmm); err != nil {
+		return err
+	}
+	return m.backend.Save(id, m.name, buffer.Bytes())
 }
 
-func (m *manager) Delete(key string) {
-	m.m.Delete(key)
+func (m *manager) Clean() error {
+	for _, c := range m.mm {
+		c.Range(func(key string, state State) bool {
+			c.Delete(key)
+			return true
+		})
+	}
+	return nil
+}
+
+type nonPersistenceManager struct {
+	manager
+}
+
+func (m *nonPersistenceManager) Save(id int64) error {
+	return nil
+}
+
+func NewManager(name string, backend Backend) Manager {
+	return &manager{
+		mutex:   &sync.Mutex{},
+		mm:      map[string]*controller{},
+		name:    name,
+		backend: backend,
+	}
+}
+
+func NewNonPersistenceManager(name string, backend Backend) Manager {
+	return &nonPersistenceManager{manager{
+		mutex:   &sync.Mutex{},
+		mm:      map[string]*controller{},
+		name:    name,
+		backend: backend,
+	}}
 }

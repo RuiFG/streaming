@@ -5,43 +5,33 @@ import (
 	"github.com/RuiFG/streaming/streaming-core/element"
 )
 
-type ElementHandler[IN1, IN2 any] interface {
-	OnElement1(e1 element.Element[IN1])
-	OnElement2(e2 element.Element[IN2])
-}
+//type TriggerHandlerGeneratorFn[IN1, IN2 any] func(chan<- barrier.BarrierType) InputHandler[IN1, IN2]
 
-type TriggerHandlerGeneratorFn[IN1, IN2 any] func(chan<- barrier.Type) ElementHandler[IN1, IN2]
-
-//TrackerHandler for at least once, simple track barriers
-type TrackerHandler[IN1, IN2 any] struct {
-	handlers []ElementHandler[IN1, IN2]
+//TrackerBridge for at least once, simple track barriers
+type TrackerBridge[IN1, IN2 any] struct {
+	inputHandler element.InputHandler[IN1, IN2]
 	barrier.Trigger
 	inputCount     int
-	pendingBarrier map[barrier.Detail]int
+	pendingBarrier map[element.Detail]int
 }
 
-func (h *TrackerHandler[IN1, IN2]) OnElement1(e1 element.Element[IN1]) {
+func (h *TrackerBridge[IN1, IN2]) OnElement1(e1 element.Element[IN1]) {
 	if e1.Type() == element.BarrierElement {
 		h.processBarrierDetail(e1.AsBarrier().Detail)
 	} else {
-		for _, handler := range h.handlers {
-			handler.OnElement1(e1)
-		}
-
+		h.inputHandler.OnElement1(e1)
 	}
 }
 
-func (h *TrackerHandler[IN1, IN2]) OnElement2(e2 element.Element[IN2]) {
+func (h *TrackerBridge[IN1, IN2]) OnElement2(e2 element.Element[IN2]) {
 	if e2.Type() == element.BarrierElement {
 		h.processBarrierDetail(e2.AsBarrier().Detail)
 	} else {
-		for _, handler := range h.handlers {
-			handler.OnElement2(e2)
-		}
+		h.inputHandler.OnElement2(e2)
 	}
 }
 
-func (h *TrackerHandler[IN1, IN2]) processBarrierDetail(barrierDetail barrier.Detail) {
+func (h *TrackerBridge[IN1, IN2]) processBarrierDetail(barrierDetail element.Detail) {
 	if h.inputCount == 1 {
 		h.Trigger.TriggerBarrier(barrierDetail)
 		return
@@ -64,9 +54,9 @@ func (h *TrackerHandler[IN1, IN2]) processBarrierDetail(barrierDetail barrier.De
 	}
 }
 
-//AlignerHandler for at exact once, block an input until all barriers are received
-type AlignerHandler[IN1, IN2 any] struct {
-	handlers []ElementHandler[IN1, IN2]
+//AlignerBridge for at exact once, block an input until all barriers are received
+type AlignerBridge[IN1, IN2 any] struct {
+	inputHandler element.InputHandler[IN1, IN2]
 	barrier.Trigger
 	inputCount       int
 	currentBarrierId int64
@@ -74,7 +64,7 @@ type AlignerHandler[IN1, IN2 any] struct {
 	buffer           []any
 }
 
-func (h *AlignerHandler[IN1, IN2]) OnElement1(e1 element.Element[IN1]) {
+func (h *AlignerBridge[IN1, IN2]) OnElement1(e1 element.Element[IN1]) {
 	if e1.Type() == element.BarrierElement {
 		h.processBarrierDetail(e1.AsBarrier().Detail, e1.AsBarrier().Upstream)
 		return
@@ -87,12 +77,10 @@ func (h *AlignerHandler[IN1, IN2]) OnElement1(e1 element.Element[IN1]) {
 			}
 		}
 	}
-	for _, handler := range h.handlers {
-		handler.OnElement1(e1)
-	}
+	h.inputHandler.OnElement1(e1)
 }
 
-func (h *AlignerHandler[IN1, IN2]) OnElement2(e2 element.Element[IN2]) {
+func (h *AlignerBridge[IN1, IN2]) OnElement2(e2 element.Element[IN2]) {
 	if e2.Type() == element.BarrierElement {
 		h.processBarrierDetail(e2.AsBarrier().Detail, e2.AsBarrier().Upstream)
 		return
@@ -105,12 +93,10 @@ func (h *AlignerHandler[IN1, IN2]) OnElement2(e2 element.Element[IN2]) {
 			}
 		}
 	}
-	for _, handler := range h.handlers {
-		handler.OnElement2(e2)
-	}
+	h.inputHandler.OnElement2(e2)
 }
 
-func (h *AlignerHandler[IN1, IN2]) processBarrierDetail(barrierDetail barrier.Detail, upstream string) {
+func (h *AlignerBridge[IN1, IN2]) processBarrierDetail(barrierDetail element.Detail, upstream string) {
 	//h.logger.Debugf("aligner process barrier %+v", barrierDetail)
 	if h.inputCount == 1 {
 		if barrierDetail.Id > h.currentBarrierId {
@@ -154,20 +140,37 @@ func (h *AlignerHandler[IN1, IN2]) processBarrierDetail(barrierDetail barrier.De
 	}
 }
 
-func (h *AlignerHandler[IN1, IN2]) onUpstream(upstream string) {
-
+func (h *AlignerBridge[IN1, IN2]) onUpstream(upstream string) {
 	if _, ok := h.blockedUpstream[upstream]; !ok {
 		h.blockedUpstream[upstream] = true
 		//h.logger.Debugf("received barrierDetail from channel %s", barrierDetail.Name)
 	}
 }
 
-func (h *AlignerHandler[IN1, IN2]) releaseBlocksAndResetBarriers() {
+func (h *AlignerBridge[IN1, IN2]) releaseBlocksAndResetBarriers() {
 	h.blockedUpstream = make(map[string]bool)
 }
 
-func (h *AlignerHandler[IN1, IN2]) beginNewAlignment(barrierDetail barrier.Detail, upstream string) {
+func (h *AlignerBridge[IN1, IN2]) beginNewAlignment(barrierDetail element.Detail, upstream string) {
 	h.currentBarrierId = barrierDetail.Id
 	h.onUpstream(upstream)
 	//h.logger.Debugf("starting stream alignment for checkpoint %d", barrier.CheckpointId)
+}
+
+func NewAlignerBridge[IN1, IN2 any](inputHandler element.InputHandler[IN1, IN2], trigger barrier.Trigger, inputCount int) *AlignerBridge[IN1, IN2] {
+	return &AlignerBridge[IN1, IN2]{
+		inputHandler:    inputHandler,
+		Trigger:         trigger,
+		inputCount:      inputCount,
+		blockedUpstream: map[string]bool{},
+	}
+}
+
+func NewTrackerBridge[IN1, IN2 any](inputHandler element.InputHandler[IN1, IN2], trigger barrier.Trigger, inputCount int) *TrackerBridge[IN1, IN2] {
+	return &TrackerBridge[IN1, IN2]{
+		inputHandler:   inputHandler,
+		Trigger:        trigger,
+		inputCount:     inputCount,
+		pendingBarrier: map[element.Detail]int{},
+	}
 }

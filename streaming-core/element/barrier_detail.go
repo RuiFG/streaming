@@ -1,15 +1,15 @@
-package barrier
+package element
 
-type Type uint
+type BarrierType uint
 
 const (
-	CheckpointBarrier Type = iota
+	CheckpointBarrier BarrierType = iota
 	ExitpointBarrier
 )
 
 type Detail struct {
 	Id int64
-	Type
+	BarrierType
 }
 
 type Message uint

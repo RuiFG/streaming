@@ -17,34 +17,29 @@ type RichFn[IN any, OUT any] interface {
 
 type operator[IN any, OUT any] struct {
 	Default[IN, any, OUT]
-	Fn Fn[IN, OUT]
+	collector element.Collector[OUT]
+	Fn        Fn[IN, OUT]
 }
 
 func (m *operator[IN, OUT]) ProcessEvent1(event *element.Event[IN]) {
 	m.Default.Collector.EmitValue(m.Fn(event.Value))
 }
 
-func Of[OIN, OUT any](upstream stream.Stream[OIN], fn Fn[OIN, OUT], nameSuffix string) *stream.OneInputOperatorStream[OIN, OUT] {
-	outputStream := &stream.OneInputOperatorStream[OIN, OUT]{
-		Env: upstream.Env(),
-		OperatorOptions: task.OperatorOptions[OIN, any, OUT]{New: func() component.Operator[OIN, any, OUT] {
-			return &operator[OIN, OUT]{Fn: fn}
-		}, NameSuffix: nameSuffix},
-	}
-	upstream.AddDownstream(outputStream.Name(), outputStream.Init)
-	return outputStream
+func Apply[IN, OUT any](upstreams []stream.Stream[IN], fn Fn[IN, OUT], nameSuffix string) (*stream.OperatorStream[IN, any, OUT], error) {
+	return stream.ApplyOneInput(upstreams, task.OperatorOptions[IN, any, OUT]{
+		Options: task.Options{NameSuffix: nameSuffix},
+		New: func() component.Operator[IN, any, OUT] {
+			return &operator[IN, OUT]{Fn: fn}
+		}})
 }
 
-func RichOf[OIN, OUT any](upstream stream.Stream[OIN], richFn RichFn[OIN, OUT], nameSuffix string) *stream.OneInputOperatorStream[OIN, OUT] {
-	outputStream := &stream.OneInputOperatorStream[OIN, OUT]{
-		OperatorOptions: task.OperatorOptions[OIN, any, OUT]{New: func() component.Operator[OIN, any, OUT] {
-			return &operator[OIN, OUT]{
-				Default: Default[OIN, any, OUT]{component.Default[any, OUT]{Rich: richFn}},
+func ApplyRich[IN, OUT any](upstreams []stream.Stream[IN], richFn RichFn[IN, OUT], nameSuffix string) (*stream.OperatorStream[IN, any, OUT], error) {
+	return stream.ApplyOneInput[IN, OUT](upstreams, task.OperatorOptions[IN, any, OUT]{
+		New: func() component.Operator[IN, any, OUT] {
+			return &operator[IN, OUT]{
+				Default: Default[IN, any, OUT]{Default: component.Default{Rich: richFn}},
 				Fn:      richFn.Map,
 			}
-		}, NameSuffix: nameSuffix,
-		},
-	}
-	upstream.AddDownstream(outputStream.Name(), outputStream.Init)
-	return outputStream
+		}, Options: task.Options{NameSuffix: nameSuffix}},
+	)
 }

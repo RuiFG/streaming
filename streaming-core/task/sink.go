@@ -2,24 +2,19 @@ package task
 
 import (
 	_c "context"
-	"github.com/RuiFG/streaming/streaming-core/barrier"
 	"github.com/RuiFG/streaming/streaming-core/component"
 	"github.com/RuiFG/streaming/streaming-core/element"
+	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/safe"
 	"github.com/RuiFG/streaming/streaming-core/service"
-	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/pkg/errors"
 	"time"
 )
 
 type SinkOptions[IN any] struct {
-	NameSuffix  string
-	New         component.NewSink[IN]
-	Channel     bool
-	ChannelSize uint
-	qos         string
-	inputCount  int
-	Handlers    []ElementHandler[IN, any]
+	Options
+	New          component.NewSink[IN]
+	InputHandler element.InputHandler[IN, any]
 }
 
 func (receiver SinkOptions[IN]) Name() string {
@@ -27,51 +22,37 @@ func (receiver SinkOptions[IN]) Name() string {
 }
 
 type SinkTask[IN any] struct {
-	ctx _c.Context
+	ctx        _c.Context
+	cancelFunc _c.CancelFunc
 	SinkOptions[IN]
-	running bool
-	channel chan element.Element[IN]
-	sink    component.Sink[IN]
-
-	storeManger       store.Manager
-	barrierSignalChan chan barrier.Signal
-	cleanFns          []func()
 	service.TimeScheduler
-	synchronousProcessor SynchronousProcessor[IN, any]
-	elementMeta          element.Meta
+	*mutex[IN, any, any]
+
+	running bool
+	sink    component.Sink[IN]
 }
 
 func (o *SinkTask[IN]) Daemon() error {
 	o.running = true
 	o.sink = o.New()
-	o.elementMeta = element.Meta{Partition: 0, Upstream: o.Name()}
-	var elementHandler ElementHandler[IN, any]
-	switch o.qos {
-	case "1":
-		elementHandler = &TrackerHandler[IN, any]{
-			handlers:       append(o.Handlers, o),
-			Trigger:        o,
-			inputCount:     o.inputCount,
-			pendingBarrier: map[barrier.Detail]int{},
-		}
-	case "2":
-		elementHandler = &AlignerHandler[IN, any]{
-			handlers:        append(o.Handlers, o),
-			Trigger:         o,
-			inputCount:      o.inputCount,
-			blockedUpstream: map[string]bool{},
-		}
-	}
-	if o.Channel {
-		syncProcessor := newChannelSyncProcessor[IN, any](elementHandler, o.ChannelSize)
-		syncProcessor.Start()
-		o.cleanFns = append(o.cleanFns, syncProcessor.Stop)
-		o.synchronousProcessor = syncProcessor
+	var inputHandler element.InputHandler[IN, any]
+	if o.SinkOptions.InputHandler == nil {
+		inputHandler = o
 	} else {
-		o.synchronousProcessor = newMutexSyncProcess[IN, any](elementHandler)
+		inputHandler = element.InputHandlerChain[IN, any]{o.SinkOptions.InputHandler, o}
 	}
+	switch o.Options.QOS {
+	case AtMostOnce, AtLeastOnce:
+		inputHandler = NewTrackerBridge(
+			inputHandler, o, o.Options.InputCount)
+	case ExactlyOnce:
+		inputHandler = NewAlignerBridge(
+			inputHandler, o, o.Options.InputCount)
+	}
+	o.mutex = newMutexSyncProcess[IN, any, any](inputHandler, nil)
+
 	if err := safe.Run(func() error {
-		return o.sink.Open(component.NewContext(o.ctx, o.Name()))
+		return o.sink.Open(component.NewContext(o.ctx, o.StoreManager.Controller(o.Name()), o, log.Named(o.Name())))
 	}); err != nil {
 		return errors.WithMessage(err, "failed to start operator task")
 	}
@@ -83,10 +64,10 @@ func (o *SinkTask[IN]) Running() bool {
 }
 
 func (o *SinkTask[IN]) Emit(e element.Element[IN]) {
-	o.synchronousProcessor.ProcessElement1(e)
+	o.mutex.ProcessInput1(e)
 }
 
-// -------------------------------------ElementHandler---------------------------------------------
+// -------------------------------------InputHandler---------------------------------------------
 
 func (o *SinkTask[IN]) OnElement1(e1 element.Element[IN]) {
 	switch e1.Type() {
@@ -101,51 +82,57 @@ func (o *SinkTask[IN]) OnElement2(element.Element[any]) { panic("not implement m
 
 // -------------------------------------BarrierTrigger---------------------------------------------
 
-func (o *SinkTask[IN]) TriggerBarrier(detail barrier.Detail) {
-	message := barrier.ACK
-	safe.Go(func() error {
-		if err := o.storeManger.Save(detail.Id); err != nil {
-			message = barrier.DEC
-		}
-		o.barrierSignalChan <- barrier.Signal{
-			Name:    o.Name(),
-			Message: message,
-			Detail:  detail}
-		return nil
-	})
+func (o *SinkTask[IN]) TriggerBarrier(detail element.Detail) {
+
+	o.NotifyBarrierCome(detail)
+	message := element.ACK
+	if err := o.StoreManager.Save(detail.Id); err != nil {
+		message = element.DEC
+	}
+	o.BarrierSignalChan <- element.Signal{
+		Name:    o.Name(),
+		Message: message,
+		Detail:  detail}
 
 }
 
 // -------------------------------------BarrierListener------------------------------------------
 
-func (o *SinkTask[IN]) NotifyComplete(detail barrier.Detail) {
-	o.sink.NotifyComplete(detail)
-	switch detail.Type {
-	case barrier.ExitpointBarrier:
+func (o *SinkTask[IN]) NotifyBarrierCome(detail element.Detail) {
+	o.sink.NotifyBarrierCome(detail)
+}
+
+func (o *SinkTask[IN]) NotifyBarrierComplete(detail element.Detail) {
+	o.sink.NotifyBarrierComplete(detail)
+	switch detail.BarrierType {
+	case element.ExitpointBarrier:
 		if err := o.sink.Close(); err != nil {
 			//todo handler error
-		}
-		for _, fn := range o.cleanFns {
-			fn()
 		}
 		o.running = false
 	}
 }
 
-func (o *SinkTask[IN]) NotifyCancel(detail barrier.Detail) {
-	o.sink.NotifyCancel(detail)
+func (o *SinkTask[IN]) NotifyBarrierCancel(detail element.Detail) {
+	o.sink.NotifyBarrierCancel(detail)
 }
 
 // --------------------------------------timeScheduler--------------------------------------------
 
 func (o *SinkTask[IN]) RegisterTicker(duration time.Duration, cb service.TimeCallback) {
-	o.TimeScheduler.RegisterTicker(duration, &callbackAgent{cb: cb, agent: o.synchronousProcessor.ProcessCaller})
+	o.TimeScheduler.RegisterTicker(duration, &callbackAgent{cb: cb, agent: o.mutex.ProcessCaller})
 }
 
 func (o *SinkTask[IN]) RegisterTimer(duration time.Duration, cb service.TimeCallback) {
-	o.TimeScheduler.RegisterTimer(duration, &callbackAgent{cb: cb, agent: o.synchronousProcessor.ProcessCaller})
+	o.TimeScheduler.RegisterTimer(duration, &callbackAgent{cb: cb, agent: o.mutex.ProcessCaller})
 }
 
-func NewSinkTask[IN any](ctx _c.Context, options SinkOptions[IN]) *SinkTask[IN] {
-	return &SinkTask[IN]{ctx: ctx, SinkOptions: options}
+func NewSinkTask[IN any](options SinkOptions[IN]) *SinkTask[IN] {
+	ctx, cancelFunc := _c.WithCancel(_c.Background())
+	return &SinkTask[IN]{
+		ctx:           ctx,
+		cancelFunc:    cancelFunc,
+		SinkOptions:   options,
+		TimeScheduler: service.NewTimeSchedulerService(ctx),
+	}
 }

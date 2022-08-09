@@ -2,29 +2,29 @@ package element
 
 import "time"
 
-type Watermark[_ any] struct {
+type Watermark[T any] struct {
 	Meta
 	//time is created event time
 	Time time.Time `json:"time"`
 }
 
-func (w *Watermark[_]) GetMeta() Meta {
+func (w *Watermark[T]) GetMeta() Meta {
 	return w.Meta
 }
 
-func (w *Watermark[_]) Type() Type {
+func (w *Watermark[T]) Type() Type {
 	return WatermarkElement
 }
 
-func (w *Watermark[_]) AsEvent() *Event[_] {
+func (w *Watermark[T]) AsEvent() *Event[T] {
 	panic("implement me")
 }
 
-func (w *Watermark[_]) AsWatermark() *Watermark[_] {
+func (w *Watermark[T]) AsWatermark() *Watermark[T] {
 	return w
 }
 
-func (w *Watermark[_]) AsBarrier() *Barrier[_] {
+func (w *Watermark[T]) AsBarrier() *Barrier[T] {
 	//TODO implement me
 	panic("implement me")
 }

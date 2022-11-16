@@ -20,6 +20,7 @@ func (m *manager) Controller(namespace string) Controller {
 		return c
 	} else {
 		c = &controller{&sync.Map{}}
+		m.mm[namespace] = c
 		return c
 	}
 }
@@ -53,14 +54,6 @@ func (m *manager) Clean() error {
 	return nil
 }
 
-type nonPersistenceManager struct {
-	manager
-}
-
-func (m *nonPersistenceManager) Save(id int64) error {
-	return nil
-}
-
 func NewManager(name string, backend Backend) Manager {
 	return &manager{
 		mutex:   &sync.Mutex{},
@@ -68,13 +61,4 @@ func NewManager(name string, backend Backend) Manager {
 		name:    name,
 		backend: backend,
 	}
-}
-
-func NewNonPersistenceManager(name string, backend Backend) Manager {
-	return &nonPersistenceManager{manager{
-		mutex:   &sync.Mutex{},
-		mm:      map[string]*controller{},
-		name:    name,
-		backend: backend,
-	}}
 }

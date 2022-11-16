@@ -1,19 +1,22 @@
 package element
 
-type Emit[T any] func(element Element[T])
-
 type Type uint
 
 const (
 	EventElement Type = iota
 	WatermarkElement
-	BarrierElement
+	WatermarkStatusElement
 )
 
 type Element[T any] interface {
-	GetMeta() Meta
 	Type() Type
-	AsEvent() Event[T]
-	AsWatermark() Watermark[T]
-	AsBarrier() Barrier[T]
+	AsEvent() *Event[T]
+	AsWatermark() *Watermark[T]
+	AsWatermarkStatus() *WatermarkStatus[T]
+}
+
+type Collector[T any] interface {
+	EmitEvent(event *Event[T])
+	EmitWatermark(watermark *Watermark[T])
+	EmitWatermarkStatus(statusType *WatermarkStatus[T])
 }

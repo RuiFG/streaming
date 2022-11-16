@@ -18,6 +18,7 @@ const (
 )
 
 type Logger interface {
+	Named(name string) Logger
 	Debug(args ...interface{})
 	Info(args ...interface{})
 	Warn(args ...interface{})

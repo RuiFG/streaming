@@ -3,7 +3,6 @@ package task
 import (
 	_c "context"
 	"github.com/RuiFG/streaming/streaming-core/common/safe"
-	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"sync"
@@ -11,13 +10,13 @@ import (
 )
 
 type pendingBarrier struct {
-	element.Detail
+	Barrier
 	isDiscarded    bool
 	notYetAckTasks map[string]bool
 }
 
-func newPendingBarrier(detail element.Detail, tasksToWaitFor []Task) *pendingBarrier {
-	pc := &pendingBarrier{Detail: detail}
+func newPendingBarrier(barrier Barrier, tasksToWaitFor []Task) *pendingBarrier {
+	pc := &pendingBarrier{Barrier: barrier}
 	nyat := make(map[string]bool)
 	for _, _task := range tasksToWaitFor {
 		nyat[_task.Name()] = true
@@ -40,7 +39,7 @@ func (c *pendingBarrier) isFullyAck() bool {
 }
 
 func (c *pendingBarrier) finalize() *completedBarrier {
-	ccp := &completedBarrier{c.Detail}
+	ccp := &completedBarrier{c.Barrier}
 	return ccp
 }
 
@@ -49,7 +48,7 @@ func (c *pendingBarrier) dispose(_ bool) {
 }
 
 type completedBarrier struct {
-	element.Detail
+	Barrier
 }
 
 type barrierStore struct {
@@ -64,7 +63,7 @@ func (s *barrierStore) add(c *completedBarrier) {
 	}
 }
 
-//Coordinator ensure task barrier coordination
+// Coordinator ensure OperatorTask barrier coordination
 type Coordinator struct {
 	ctx                  _c.Context
 	cancelFunc           _c.CancelFunc
@@ -73,25 +72,23 @@ type Coordinator struct {
 	tasksToWaitFor       []Task
 	pendingBarriers      *sync.Map
 	completedCheckpoints *barrierStore
-	interval             time.Duration
-	cleanThreshold       int
+
+	cleanThreshold int
 
 	ticker             *time.Ticker
-	barrierSignalChan  chan element.Signal
-	barrierTriggerChan chan element.BarrierType
+	barrierSignalChan  chan Signal
+	barrierTriggerChan chan BarrierType
 	storeBackend       store.Backend
 	activated          bool
 }
 
 func (c *Coordinator) Activate() {
 	c.logger.Infof("start coordinator")
-	c.ticker = time.NewTicker(c.interval)
-	tc := c.ticker.C
 	go func() {
 		c.activated = true
 		toBeClean := 0
-		defaultBarrierType := element.CheckpointBarrier
-		barrierTriggerFn := func(detail element.Detail) {
+		defaultBarrierType := CheckpointBarrier
+		barrierTriggerFn := func(barrier Barrier) {
 			//trigger barrier
 			waitCheckpointNum := 0
 			c.pendingBarriers.Range(func(key, value any) bool {
@@ -104,18 +101,18 @@ func (c *Coordinator) Activate() {
 			}
 			for _, _task := range c.tasksToWaitFor {
 				if !_task.Running() {
-					c.logger.Infof("task %s is not running, cancel it.", _task.Name())
+					c.logger.Infof("OperatorTask %s is not running, cancel it.", _task.Name())
 					return
 				}
 			}
 
-			pending := newPendingBarrier(detail, c.tasksToWaitFor)
-			c.logger.Debugf("create pendingBarrier %d", detail.Id)
-			c.pendingBarriers.Store(detail, pending)
+			pending := newPendingBarrier(barrier, c.tasksToWaitFor)
+			c.logger.Debugf("create pendingBarrier %d", barrier.Id)
+			c.pendingBarriers.Store(barrier, pending)
 			//let the sources send out a barrier
 			for _, r := range c.tasksToTrigger {
-				go func(_task Task) {
-					_task.TriggerBarrier(detail)
+				go func(life Task) {
+					life.TriggerBarrier(barrier)
 				}(r)
 			}
 			toBeClean++
@@ -126,38 +123,36 @@ func (c *Coordinator) Activate() {
 
 		}
 
-		barrierSignalHandlerFn := func(signal element.Signal) {
+		barrierSignalHandlerFn := func(signal Signal) {
 			switch signal.Message {
-			case element.ACK:
+			case ACK:
 				c.logger.Debugf("receive ack from %s for id %d", signal.Name, signal.Id)
-				if cp, ok := c.pendingBarriers.Load(signal.Detail); ok {
+				if cp, ok := c.pendingBarriers.Load(signal.Barrier); ok {
 					checkpoint := cp.(*pendingBarrier)
 					checkpoint.ack(signal.Name)
 					if checkpoint.isFullyAck() {
-						c.complete(signal.Detail)
+						c.complete(signal.Barrier)
 					}
 				} else {
 					c.logger.Debugf("receive ack from %s for non existing id %d", signal.Name, signal.Id)
 				}
-			case element.DEC:
+			case DEC:
 				c.logger.Debugf("receive dec from %s for id %d, cancel it", signal.Name, signal.Id)
-				c.cancel(signal.Detail)
+				c.cancel(signal.Barrier)
 			}
 		}
 
 		for {
 			select {
-			case n := <-tc:
-				barrierTriggerFn(element.Detail{Id: n.UnixMilli(), BarrierType: defaultBarrierType})
 			case barrierType := <-c.barrierTriggerChan:
-				if defaultBarrierType == element.ExitpointBarrier {
-					barrierType = element.ExitpointBarrier
+				if defaultBarrierType == ExitpointBarrier {
+					barrierType = ExitpointBarrier
 				} else {
-					if barrierType == element.ExitpointBarrier {
-						defaultBarrierType = element.ExitpointBarrier
+					if barrierType == ExitpointBarrier {
+						defaultBarrierType = ExitpointBarrier
 					}
 				}
-				barrierTriggerFn(element.Detail{Id: time.Now().UnixMilli(), BarrierType: barrierType})
+				barrierTriggerFn(Barrier{Id: time.Now().UnixMilli(), BarrierType: barrierType})
 			case barrierSignal := <-c.barrierSignalChan:
 				barrierSignalHandlerFn(barrierSignal)
 			case <-c.ctx.Done():
@@ -172,7 +167,7 @@ func (c *Coordinator) Activate() {
 }
 
 func (c *Coordinator) Deactivate() {
-	c.barrierTriggerChan <- element.ExitpointBarrier
+	c.barrierTriggerChan <- ExitpointBarrier
 }
 
 func (c *Coordinator) Wait() {
@@ -180,90 +175,88 @@ func (c *Coordinator) Wait() {
 	return
 }
 
-//cancel removes the barrier.Detail from a pendingBarrier
-func (c *Coordinator) cancel(detail element.Detail) {
-	if checkpoint, ok := c.pendingBarriers.Load(detail); ok {
-		c.pendingBarriers.Delete(detail)
+// cancel removes the barrier.BarrierDetail from a pendingBarrier
+func (c *Coordinator) cancel(barrier Barrier) {
+	if checkpoint, ok := c.pendingBarriers.Load(barrier); ok {
+		c.pendingBarriers.Delete(barrier)
 		checkpoint.(*pendingBarrier).dispose(true)
-		c.notifyCancel(detail)
+		c.notifyCancel(barrier)
 	} else {
-		c.logger.Debugf("cancel for non existing checkpoint %d. just ignored", detail.Id)
+		c.logger.Debugf("cancel for non existing checkpoint %d. just ignored", barrier.Id)
 	}
 }
 
-func (c *Coordinator) complete(detail element.Detail) {
-	if ccp, ok := c.pendingBarriers.Load(detail); ok {
-		err := c.storeBackend.Persist(detail.Id)
+func (c *Coordinator) complete(barrier Barrier) {
+	if ccp, ok := c.pendingBarriers.Load(barrier); ok {
+		err := c.storeBackend.Persist(barrier.Id)
 		if err != nil {
-			c.logger.Warnf("cannot save checkpoint %d due to storage error: %v", detail.Id, err)
+			c.logger.Warnf("cannot save checkpoint %d due to storage error: %v", barrier.Id, err)
 			return
 		}
 		c.completedCheckpoints.add(ccp.(*pendingBarrier).finalize())
-		c.pendingBarriers.Delete(detail)
+		c.pendingBarriers.Delete(barrier)
 		//Drop the previous pendingBarriers
 		c.pendingBarriers.Range(func(a1 interface{}, a2 interface{}) bool {
-			cBarrier := a1.(element.Detail)
+			cBarrier := a1.(Barrier)
 			cp := a2.(*pendingBarrier)
-			if cBarrier.Id < detail.Id {
+			if cBarrier.Id < barrier.Id {
 				cp.isDiscarded = true
 				c.pendingBarriers.Delete(cBarrier)
 			}
 			return true
 		})
-		c.notifyComplete(detail)
-		c.logger.Debugf("totally complete barrier %d", detail.Id)
-		if detail.BarrierType == element.ExitpointBarrier {
+		c.notifyComplete(barrier)
+		c.logger.Debugf("totally complete barrier %d", barrier.Id)
+		if barrier.BarrierType == ExitpointBarrier {
 			c.cancelFunc()
 		}
 	} else {
-		c.logger.Infof("cannot find barrier %d to complete", detail.Id)
+		c.logger.Infof("cannot find barrier %d to complete", barrier.Id)
 	}
 }
 
-func (c *Coordinator) notifyComplete(detail element.Detail) {
+func (c *Coordinator) notifyComplete(barrier Barrier) {
 	for name, _task := range c.tasksToWaitFor {
 		if err := safe.Run(func() error {
-			_task.NotifyBarrierComplete(detail)
+			_task.NotifyBarrierComplete(barrier)
 			return nil
 		}); err != nil {
-			c.logger.Warnw("failed to notify checkpoint complete.", "task", name, "err", err)
+			c.logger.Warnw("failed to notify checkpoint complete.", "OperatorTask", name, "err", err)
 		}
 	}
 }
 
-func (c *Coordinator) notifyCancel(detail element.Detail) {
+func (c *Coordinator) notifyCancel(barrier Barrier) {
 	for _, _task := range c.tasksToWaitFor {
 		if err := safe.Run(func() error {
-			_task.NotifyBarrierCancel(detail)
+			_task.NotifyBarrierCancel(barrier)
 			return nil
 		}); err != nil {
-			c.logger.Warnw("failed to notify checkpoint cancel.", "task", _task.Name(), "err", err)
+			c.logger.Warnw("failed to notify checkpoint cancel.", "OperatorTask", _task.Name(), "err", err)
 		}
 	}
 }
 
 func NewCoordinator(
-	checkpointInterval time.Duration,
 	tasksToTrigger []Task,
 	tasksToWaitFor []Task,
 	storeBackend store.Backend,
-	barrierSignalChan chan element.Signal,
-	barrierTriggerChan chan element.BarrierType,
+	barrierSignalChan chan Signal,
+	barrierTriggerChan chan BarrierType,
 ) *Coordinator {
 	ctx, cancelFunc := _c.WithCancel(_c.Background())
 	return &Coordinator{
 		ctx:             ctx,
 		cancelFunc:      cancelFunc,
-		logger:          log.Named("coordinator"),
+		logger:          log.Global().Named("coordinator"),
 		tasksToTrigger:  tasksToTrigger,
 		tasksToWaitFor:  tasksToWaitFor,
 		pendingBarriers: new(sync.Map),
 		completedCheckpoints: &barrierStore{
-			maxNum: 3,
+			maxNum: 5,
 		},
 		barrierTriggerChan: barrierTriggerChan,
 		barrierSignalChan:  barrierSignalChan,
-		interval:           checkpointInterval,
 		storeBackend:       storeBackend,
 		cleanThreshold:     100,
 	}

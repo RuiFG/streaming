@@ -8,17 +8,32 @@ import (
 )
 
 var (
-	one   *logger = &logger{zap.S()}
-	mutex sync.Mutex
+	rootLogger Logger
+	mutex      = &sync.Mutex{}
 )
 
 type logger struct {
 	*zap.SugaredLogger
 }
 
+func (l *logger) Named(name string) Logger {
+	return &logger{l.SugaredLogger.Named(name)}
+}
+
+func Global() Logger {
+	if rootLogger == nil {
+		Setup(DefaultOptions())
+	}
+	return rootLogger
+}
+
 func Setup(options *Options) {
 	mutex.Lock()
 	defer mutex.Unlock()
+	if rootLogger != nil {
+		rootLogger.Warn("can't reSetup root logger")
+		return
+	}
 	var (
 		infoWriteSyncers []zapcore.WriteSyncer
 		errWriteSyncers  []zapcore.WriteSyncer
@@ -63,10 +78,5 @@ func Setup(options *Options) {
 
 	}
 
-	one = &logger{zapSugarLogger}
-}
-
-func Named(name string) Logger {
-	named := one.SugaredLogger.Named(name)
-	return &logger{named}
+	rootLogger = &logger{zapSugarLogger}
 }

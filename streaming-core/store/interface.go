@@ -1,25 +1,26 @@
 package store
 
-type StateType string
+type StateType int
 
 const (
-	ValueType = "value"
-	MapType   = "map"
+	NonParallelizeState StateType = iota
+	ParallelizeState
 )
 
 type mirrorState struct {
-	StateType
-	Bytes []byte
+	Type StateType
+	//content must be Serializable
+	Content any
 }
 
-func (m mirrorState) Initialized() bool   { return false }
 func (m mirrorState) mirror() mirrorState { return m }
-func (m mirrorState) Clear()              {}
 
 type State interface {
-	Initialized() bool
 	mirror() mirrorState
-	Clear()
+}
+
+type StateHandler[T any] interface {
+	Referer() *T
 }
 
 type Controller interface {

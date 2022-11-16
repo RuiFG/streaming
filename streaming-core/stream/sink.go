@@ -2,45 +2,31 @@ package stream
 
 import (
 	"github.com/RuiFG/streaming/streaming-core/element"
-	"github.com/RuiFG/streaming/streaming-core/store"
-	"github.com/RuiFG/streaming/streaming-core/task"
+	"github.com/RuiFG/streaming/streaming-core/operator"
 	"sync"
 )
 
+type SinkStreamOptions[IN any] struct {
+	Options
+	New              operator.NewSink[IN]
+	ElementListeners []element.Listener[IN, any, any]
+}
+
+type WithSinkStreamOptions[IN any] func(options SinkStreamOptions[IN]) SinkStreamOptions[IN]
+
+func ApplyWithSinkStreamOptionsFns[IN any](applyFns []WithSinkStreamOptions[IN]) SinkStreamOptions[IN] {
+	options := SinkStreamOptions[IN]{Options: Options{ChannelSize: 1024}}
+	for _, fn := range applyFns {
+		options = fn(options)
+	}
+	return options
+}
+
 type SinkStream[IN any] struct {
-	task.SinkOptions[IN]
-	env         *Env
-	once        *sync.Once
-	task        *task.SinkTask[IN]
-	upstreamMap map[string]struct{}
+	OperatorStream[IN, any, any]
 }
 
-func (o *SinkStream[IN]) Env() *Env {
-	return o.env
-}
-
-func (o *SinkStream[IN]) addDownstream(string, downstreamInitFn[IN]) {
-	panic("can't implement me")
-}
-
-func (o *SinkStream[IN]) addUpstream(name string) {
-	o.upstreamMap[name] = struct{}{}
-}
-
-func (o *SinkStream[IN]) init(upstream string) (element.Emit[IN], []task.Task, error) {
-	var (
-		tasks []task.Task
-	)
-	o.once.Do(func() {
-		o.SinkOptions.InputCount = len(o.upstreamMap)
-		o.task = task.NewSinkTask[IN](o.SinkOptions)
-		tasks = []task.Task{o.task}
-	})
-	return o.task.Emit, tasks, nil
-
-}
-
-func ToSink[IN any](upstreams []Stream[IN], sinkOptions task.SinkOptions[IN]) error {
+func ToSink[IN any](upstreams []Stream[IN], sinkOptions SinkStreamOptions[IN]) error {
 	var env *Env
 	for _, upstream := range upstreams {
 		if env == nil {
@@ -49,18 +35,25 @@ func ToSink[IN any](upstreams []Stream[IN], sinkOptions task.SinkOptions[IN]) er
 			return ErrMultipleEnv
 		}
 	}
-	sinkOptions.Options.QOS = env.qos
-	sinkOptions.Options.BarrierSignalChan = env.barrierSignalChan
-	sinkOptions.Options.BarrierTriggerChan = env.barrierTriggerChan
-	sinkOptions.Options.StoreManager = store.NewNonPersistenceManager(sinkOptions.Name(), env.storeBackend)
+
 	sinkStream := &SinkStream[IN]{
-		env:         env,
-		once:        &sync.Once{},
-		SinkOptions: sinkOptions,
-		upstreamMap: map[string]struct{}{},
+		OperatorStream[IN, any, any]{
+			options: OperatorStreamOptions[IN, any, any]{
+				Options: sinkOptions.Options,
+				New: func() operator.Operator[IN, any, any] {
+					return &operator.SinkOperatorWrap[IN]{
+						Sink: sinkOptions.New(),
+					}
+				},
+				ElementListeners: sinkOptions.ElementListeners,
+			},
+			env:         env,
+			upstreamMap: map[string]struct{}{},
+			once:        &sync.Once{},
+		},
 	}
 	for _, upstream := range upstreams {
-		upstream.addDownstream(sinkStream.Name(), sinkStream.init)
+		upstream.addDownstream(sinkStream.Name(), sinkStream.Init1)
 		sinkStream.addUpstream(upstream.Name())
 	}
 	return nil

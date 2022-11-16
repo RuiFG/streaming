@@ -2,18 +2,42 @@ package stream
 
 import (
 	"github.com/RuiFG/streaming/streaming-core/element"
+	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/RuiFG/streaming/streaming-core/task"
 	"sync"
 )
 
+type OperatorStreamOptions[IN1, IN2, OUT any] struct {
+	Options
+	ElementListeners []element.Listener[IN1, IN2, OUT]
+	New              operator.NewOperator[IN1, IN2, OUT]
+}
+
+type WithOperatorStreamOptions[IN1, IN2, OUT any] func(options OperatorStreamOptions[IN1, IN2, OUT]) OperatorStreamOptions[IN1, IN2, OUT]
+
+func ApplyWithOperatorStreamOptionsFns[IN1, IN2, OUT any](applyFns []WithOperatorStreamOptions[IN1, IN2, OUT]) OperatorStreamOptions[IN1, IN2, OUT] {
+	options := OperatorStreamOptions[IN1, IN2, OUT]{Options: Options{ChannelSize: 1024}}
+	for _, fn := range applyFns {
+		options = fn(options)
+	}
+	return options
+}
+
 type OperatorStream[IN1, IN2, OUT any] struct {
-	task.OperatorOptions[IN1, IN2, OUT]
+	options             OperatorStreamOptions[IN1, IN2, OUT]
 	env                 *Env
 	downstreamInitFnMap map[string]downstreamInitFn[OUT]
 	upstreamMap         map[string]struct{}
-	once                *sync.Once
-	task                *task.OperatorTask[IN1, IN2, OUT]
+
+	once           *sync.Once
+	task           *task.OperatorTask[IN1, IN2, OUT]
+	downstreamTask []task.Task
+	initErr        error
+}
+
+func (o *OperatorStream[IN1, IN2, OUT]) Name() string {
+	return o.options.Name
 }
 
 func (o *OperatorStream[IN1, IN2, OUT]) Env() *Env {
@@ -28,19 +52,25 @@ func (o *OperatorStream[IN1, IN2, OUT]) addDownstream(name string, downstreamIni
 	o.downstreamInitFnMap[name] = downstreamInitFn
 }
 
-func (o *OperatorStream[IN1, IN2, OUT]) Init1(upstream string) (element.Emit[IN1], []task.Task, error) {
-	var (
-		tasks   []task.Task
-		initErr error
-	)
+func (o *OperatorStream[IN1, IN2, OUT]) Init1(upstream string) (task.Emit, []task.Task, error) {
+	o.init()
+	return o.task.Emit1, o.downstreamTask, o.initErr
+}
+
+func (o *OperatorStream[IN1, IN2, OUT]) Init2(upstream string) (task.Emit, []task.Task, error) {
+	o.init()
+	return o.task.Emit2, o.downstreamTask, o.initErr
+}
+
+func (o *OperatorStream[IN1, IN2, OUT]) init() {
 	o.once.Do(func() {
 		var (
-			emits              []element.Emit[OUT]
+			emits              []task.Emit
 			allDownstreamTasks []task.Task
 		)
 		for _, initFn := range o.downstreamInitFnMap {
-			if emitNext, downstreamTasks, err := initFn(o.Name()); err != nil {
-				initErr = err
+			if emitNext, downstreamTasks, err := initFn(o.options.Name); err != nil {
+				o.initErr = err
 				return
 			} else {
 				emits = append(emits, emitNext)
@@ -48,47 +78,32 @@ func (o *OperatorStream[IN1, IN2, OUT]) Init1(upstream string) (element.Emit[IN1
 					allDownstreamTasks = append(allDownstreamTasks, downstreamTasks...)
 				}
 			}
-			o.OperatorOptions.InputCount = len(o.upstreamMap)
-			o.OperatorOptions.OutputCount = len(o.downstreamInitFnMap)
-			o.OperatorOptions.OutputHandler = &emitsOutputHandler[OUT]{emits: emits}
-			o.task = task.NewOperatorTask[IN1, IN2, OUT](o.OperatorOptions)
-			tasks = append(allDownstreamTasks, o.task)
 		}
-	})
-	return o.task.Emit1, tasks, initErr
-}
-
-func (o *OperatorStream[IN1, IN2, OUT]) Init2(upstream string) (element.Emit[IN2], []task.Task, error) {
-	var (
-		tasks   []task.Task
-		initErr error
-	)
-	o.once.Do(func() {
-		var (
-			emits              []element.Emit[OUT]
-			allDownstreamTasks []task.Task
-		)
-		for _, initFn := range o.downstreamInitFnMap {
-			if emitNext, downstreamTasks, err := initFn(o.Name()); err != nil {
-				initErr = err
-				return
-			} else {
-				emits = append(emits, emitNext)
-				if downstreamTasks != nil {
-					allDownstreamTasks = append(allDownstreamTasks, downstreamTasks...)
+		taskOptions := task.Options[IN1, IN2, OUT]{
+			Name:               o.options.Name,
+			QOS:                o.env.qos,
+			BarrierSignalChan:  o.env.barrierSignalChan,
+			BarrierTriggerChan: o.env.barrierTriggerChan,
+			ChannelSize:        o.options.ChannelSize,
+			ElementListeners:   o.options.ElementListeners,
+			Emit: func(e task.ElementOrBarrier) {
+				for _, emit := range emits {
+					emit(e)
 				}
-			}
-			o.OperatorOptions.InputCount = len(o.upstreamMap)
-			o.OperatorOptions.OutputCount = len(o.downstreamInitFnMap)
-			o.OperatorOptions.OutputHandler = &emitsOutputHandler[OUT]{emits: emits}
-			o.task = task.NewOperatorTask[IN1, IN2, OUT](o.OperatorOptions)
-			tasks = append(allDownstreamTasks, o.task)
+			},
+			New:          o.options.New,
+			InputCount:   len(o.upstreamMap),
+			OutputCount:  len(o.downstreamInitFnMap),
+			StoreManager: store.NewManager(o.options.Name, o.env.storeBackend),
 		}
+
+		o.task = task.New[IN1, IN2, OUT](taskOptions)
+		o.downstreamTask = append(allDownstreamTasks, o.task)
+
 	})
-	return o.task.Emit2, tasks, initErr
 }
 
-func ApplyOneInput[IN, OUT any](upstreams []Stream[IN], operatorOptions task.OperatorOptions[IN, any, OUT]) (*OperatorStream[IN, any, OUT], error) {
+func ApplyOneInput[IN, OUT any](upstreams []Stream[IN], streamOptions OperatorStreamOptions[IN, any, OUT]) (*OperatorStream[IN, any, OUT], error) {
 	var env *Env
 	for _, upstream := range upstreams {
 		if env == nil {
@@ -97,14 +112,12 @@ func ApplyOneInput[IN, OUT any](upstreams []Stream[IN], operatorOptions task.Ope
 			return nil, ErrMultipleEnv
 		}
 	}
-	operatorOptions.Options.QOS = env.qos
-	operatorOptions.Options.BarrierSignalChan = env.barrierSignalChan
-	operatorOptions.Options.BarrierTriggerChan = env.barrierTriggerChan
-	operatorOptions.Options.StoreManager = store.NewNonPersistenceManager(operatorOptions.Name(), env.storeBackend)
+	//add operator prefix
+	streamOptions.Name = "operator." + streamOptions.Name
 	outputStream := &OperatorStream[IN, any, OUT]{
+		options:             streamOptions,
 		env:                 env,
 		once:                &sync.Once{},
-		OperatorOptions:     operatorOptions,
 		upstreamMap:         map[string]struct{}{},
 		downstreamInitFnMap: map[string]downstreamInitFn[OUT]{},
 	}
@@ -115,19 +128,16 @@ func ApplyOneInput[IN, OUT any](upstreams []Stream[IN], operatorOptions task.Ope
 	return outputStream, nil
 }
 
-func ApplyTwoInput[IN1, IN2, OUT any](leftUpstream Stream[IN1], rightUpstream Stream[IN2], operatorOptions task.OperatorOptions[IN1, IN2, OUT]) *OperatorStream[IN1, IN2, OUT] {
+func ApplyTwoInput[IN1, IN2, OUT any](leftUpstream Stream[IN1], rightUpstream Stream[IN2], streamOptions OperatorStreamOptions[IN1, IN2, OUT]) (*OperatorStream[IN1, IN2, OUT], error) {
 	if leftUpstream.Env() != rightUpstream.Env() {
-		panic("cannot add streams from multiple environments")
+		return nil, ErrMultipleEnv
 	}
-	env := leftUpstream.Env()
-	operatorOptions.Options.QOS = env.qos
-	operatorOptions.Options.BarrierSignalChan = env.barrierSignalChan
-	operatorOptions.Options.BarrierTriggerChan = env.barrierTriggerChan
-	operatorOptions.Options.StoreManager = store.NewNonPersistenceManager(operatorOptions.Name(), env.storeBackend)
+	//add operator prefix
+	streamOptions.Name = "operator." + streamOptions.Name
 	outputStream := &OperatorStream[IN1, IN2, OUT]{
-		env:                 env,
+		options:             streamOptions,
+		env:                 leftUpstream.Env(),
 		once:                &sync.Once{},
-		OperatorOptions:     operatorOptions,
 		upstreamMap:         map[string]struct{}{},
 		downstreamInitFnMap: map[string]downstreamInitFn[OUT]{},
 	}
@@ -135,5 +145,5 @@ func ApplyTwoInput[IN1, IN2, OUT any](leftUpstream Stream[IN1], rightUpstream St
 	rightUpstream.addDownstream(outputStream.Name(), outputStream.Init2)
 	outputStream.addUpstream(leftUpstream.Name())
 	outputStream.addUpstream(rightUpstream.Name())
-	return outputStream
+	return outputStream, nil
 }

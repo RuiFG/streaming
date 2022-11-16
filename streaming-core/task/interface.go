@@ -1,8 +1,8 @@
 package task
 
 import (
-	"github.com/RuiFG/streaming/streaming-core/barrier"
 	"github.com/RuiFG/streaming/streaming-core/element"
+	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
 )
 
@@ -14,19 +14,21 @@ const (
 	ExactlyOnce
 )
 
-type Options struct {
-	QOS
-	NameSuffix         string
-	BarrierSignalChan  chan element.Signal
-	BarrierTriggerChan chan element.BarrierType
+type Options[IN1, IN2, OUT any] struct {
+	Name               string
+	QOS                QOS
+	BarrierSignalChan  chan Signal
+	BarrierTriggerChan chan BarrierType
+
+	ElementListeners []element.Listener[IN1, IN2, OUT]
+	//sink Emit is nil
+	Emit Emit
+	New  operator.NewOperator[IN1, IN2, OUT]
 
 	InputCount   int
 	OutputCount  int
+	ChannelSize  int
 	StoreManager store.Manager
-}
-
-func (o Options) Name() string {
-	return "." + o.NameSuffix
 }
 
 type Task interface {
@@ -35,6 +37,6 @@ type Task interface {
 	Daemon() error
 	Running() bool
 
-	barrier.Trigger
-	barrier.Listener
+	BarrierTrigger
+	BarrierListener
 }

@@ -1,44 +1,32 @@
 package element
 
-type Meta struct {
-	Partition uint
-	Upstream  string
-}
-
 type Event[T any] struct {
-	Meta
-	Value T
+	//keep in mind that it is not thread-safe when you modify
+	Value        T
+	Timestamp    int64
+	HasTimestamp bool
 }
 
-func (e Event[T]) GetMeta() Meta {
-	return e.Meta
-}
-
-func (e Event[T]) Type() Type {
+func (e *Event[T]) Type() Type {
 	return EventElement
 }
 
-func (e Event[T]) AsEvent() Event[T] {
+func (e *Event[T]) AsEvent() *Event[T] {
 	return e
 }
 
-func (e Event[T]) AsWatermark() Watermark[T] {
+func (e *Event[T]) AsWatermark() *Watermark[T] {
 	panic("implement me")
 }
 
-func (e Event[T]) AsBarrier() Barrier[T] {
+func (e *Event[T]) AsWatermarkStatus() *WatermarkStatus[T] {
+	//TODO implement me
 	panic("implement me")
 }
 
-type Collector[T any] struct {
-	Emit Emit[T]
-	Meta Meta
-}
-
-func (c Collector[T]) EmitValue(value T) {
-	c.Emit(Event[T]{Meta: c.Meta, Value: value})
-}
-
-func (c Collector[T]) EmitWatermark(watermark Watermark[T]) {
-	c.Emit(watermark)
+func Copy[T, N any](event *Event[T], value N) *Event[N] {
+	return &Event[N]{
+		Value:     value,
+		Timestamp: event.Timestamp,
+	}
 }

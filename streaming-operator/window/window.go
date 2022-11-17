@@ -59,6 +59,9 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) ProcessEvent1(e *element.Event[IN]) {
 	key := a.SelectorFn(e.Value)
 	windows := a.AssignWindows(a.windowCtx, e.Value, e.Timestamp)
 	for _, window := range windows {
+		if a.isWindowLate(window) {
+			continue
+		}
 		isSkip = false
 		if (*a.state)[window] == nil {
 			(*a.state)[window] = map[KEY]ACC{}
@@ -164,13 +167,18 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) registerCleanupTimer(window Window, k
 	}
 }
 
-func (a *operator[KEY, IN, ACC, WIN, OUT]) isCleanupTime(window Window, timestamp int64) bool {
-	return timestamp == a.cleanupTime(window)
-}
-
 func (a *operator[KEY, IN, ACC, WIN, OUT]) isEventLate(eventTimestamp int64) bool {
 	return (a.AssignerFn.IsEventTime()) &&
 		(eventTimestamp+a.AllowedLateness <= a.timerService.CurrentEventTimestamp())
+}
+
+func (a *operator[KEY, IN, ACC, WIN, OUT]) isWindowLate(window Window) bool {
+	return (a.AssignerFn.IsEventTime()) &&
+		(a.cleanupTime(window) <= a.timerService.CurrentEventTimestamp())
+}
+
+func (a *operator[KEY, IN, ACC, WIN, OUT]) isCleanupTime(window Window, timestamp int64) bool {
+	return timestamp == a.cleanupTime(window)
 }
 
 // cleanupTime returns the cleanup time for a window,

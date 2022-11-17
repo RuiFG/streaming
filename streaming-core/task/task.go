@@ -96,13 +96,13 @@ func (o *OperatorTask[IN1, IN2, OUT]) OnElement1(e1 element.Element[IN1]) {
 	for _, listener := range o.ElementListeners {
 		listener.NotifyInput1(e1)
 	}
-	switch e1.Type() {
-	case element.EventElement:
-		o.operatorRuntime.ProcessEvent1(e1.AsEvent())
-	case element.WatermarkElement:
-		o.operatorRuntime.ProcessWatermark1(e1.AsWatermark())
-	case element.WatermarkStatusElement:
-		o.operatorRuntime.ProcessWatermarkStatus1(e1.AsWatermarkStatus())
+	switch e := e1.(type) {
+	case *element.Event[IN1]:
+		o.operatorRuntime.ProcessEvent1(e)
+	case element.Watermark:
+		o.operatorRuntime.ProcessWatermark1(e)
+	case element.WatermarkStatus:
+		o.operatorRuntime.ProcessWatermarkStatus1(e)
 	}
 }
 
@@ -110,14 +110,15 @@ func (o *OperatorTask[IN1, IN2, OUT]) OnElement2(e2 element.Element[IN2]) {
 	for _, listener := range o.ElementListeners {
 		listener.NotifyInput2(e2)
 	}
-	switch e2.Type() {
-	case element.EventElement:
-		o.operatorRuntime.ProcessEvent2(e2.AsEvent())
-	case element.WatermarkElement:
-		o.operatorRuntime.ProcessWatermark2(e2.AsWatermark())
-	case element.WatermarkStatusElement:
-		o.operatorRuntime.ProcessWatermarkStatus2(e2.AsWatermarkStatus())
+	switch e := e2.(type) {
+	case *element.Event[IN2]:
+		o.operatorRuntime.ProcessEvent2(e)
+	case element.Watermark:
+		o.operatorRuntime.ProcessWatermark2(e)
+	case element.WatermarkStatus:
+		o.operatorRuntime.ProcessWatermarkStatus2(e)
 	}
+
 }
 
 func (o *OperatorTask[IN1, IN2, OUT]) MutexOnElement(e ElementOrBarrier) {

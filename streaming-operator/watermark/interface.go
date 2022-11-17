@@ -20,22 +20,20 @@ func (c *collector[T]) EmitWatermarkTimestamp(watermarkTimestamp int64) {
 	}
 	c.currentWatermarkTimestamp = watermarkTimestamp
 	c.MarkActive()
-	c.c.EmitWatermark(&element.Watermark[T]{
-		Timestamp: c.currentWatermarkTimestamp,
-	})
+	c.c.EmitWatermark(element.Watermark(c.currentWatermarkTimestamp))
 }
 
 func (c *collector[T]) MarkIdle() {
 	if !c.idle {
 		c.idle = true
-		c.c.EmitWatermarkStatus(&element.WatermarkStatus[T]{StatusType: element.IdleWatermarkStatus})
+		c.c.EmitWatermarkStatus(element.IdleWatermarkStatus)
 	}
 }
 
 func (c *collector[T]) MarkActive() {
 	if c.idle {
 		c.idle = false
-		c.c.EmitWatermarkStatus(&element.WatermarkStatus[T]{StatusType: element.IdleWatermarkStatus})
+		c.c.EmitWatermarkStatus(element.ActiveWatermarkStatus)
 	}
 }
 

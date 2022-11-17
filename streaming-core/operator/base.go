@@ -22,25 +22,21 @@ func (o *BaseOperator[IN1, IN2, OUT]) Close() error {
 	return nil
 }
 
-func (o *BaseOperator[IN1, IN2, OUT]) ProcessEvent1(event *element.Event[IN1]) {
+func (o *BaseOperator[IN1, IN2, OUT]) ProcessEvent1(_ *element.Event[IN1]) {
 	panic("base operator can't process event")
 }
 
-func (o *BaseOperator[IN1, IN2, OUT]) ProcessEvent2(event *element.Event[IN2]) {
+func (o *BaseOperator[IN1, IN2, OUT]) ProcessEvent2(_ *element.Event[IN2]) {
 	panic("base operator can't process event")
 }
 
-func (o *BaseOperator[IN1, IN2, OUT]) ProcessWatermarkStatus(watermarkStatus element.WatermarkStatusType) {
-	o.Collector.EmitWatermarkStatus(&element.WatermarkStatus[OUT]{
-		StatusType: watermarkStatus,
-	})
+func (o *BaseOperator[IN1, IN2, OUT]) ProcessWatermarkStatus(watermarkStatus element.WatermarkStatus) {
+	o.Collector.EmitWatermarkStatus(watermarkStatus)
 }
 
-func (o *BaseOperator[IN1, IN2, OUT]) ProcessWatermarkTimestamp(watermarkTimestamp int64) {
-	o.TimerManager.advanceWatermarkTimestamp(watermarkTimestamp)
-	o.Collector.EmitWatermark(&element.Watermark[OUT]{
-		Timestamp: watermarkTimestamp,
-	})
+func (o *BaseOperator[IN1, IN2, OUT]) ProcessWatermark(watermark element.Watermark) {
+	o.TimerManager.advanceWatermarkTimestamp(int64(watermark))
+	o.Collector.EmitWatermark(watermark)
 }
 
 func (o *BaseOperator[IN1, IN2, OUT]) NotifyCheckpointCome(_ int64)     {}

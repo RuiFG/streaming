@@ -43,6 +43,7 @@ func main() {
 		func(string2 string) int64 {
 			return time.Now().UnixMilli()
 		}, 1*time.Second, "process time")
+
 	if err := mockSink.ToSink([]stream.Stream[string]{aaa},
 		func(in string) {
 			atomic.AddInt64(&counter, 1)

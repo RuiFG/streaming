@@ -20,11 +20,11 @@ func (c *mockCollector[T]) EmitEvent(event *element.Event[T]) {
 	//fmt.Println(event.Value)
 }
 
-func (c *mockCollector[T]) EmitWatermark(watermark *element.Watermark[T]) {
-	fmt.Println("current watermark: ", watermark.Timestamp)
+func (c *mockCollector[T]) EmitWatermark(watermark element.Watermark) {
+	fmt.Println("current watermark: ", watermark)
 }
 
-func (c *mockCollector[T]) EmitWatermarkStatus(statusType *element.WatermarkStatus[T]) {
+func (c *mockCollector[T]) EmitWatermarkStatus(_ element.WatermarkStatus) {
 
 }
 
@@ -71,11 +71,12 @@ func TestAggregateEventTime(t *testing.T) {
 		ProcessWindowFn: &PassThroughProcessWindowFn[string, string]{},
 		AllowedLateness: 150,
 	}
+
 	operator.Open(ctx, &mockCollector[string]{})
 	for i := 0; i < 1201; i++ {
 		mutex.Lock()
 		if i%20 == 0 {
-			operator.ProcessWatermarkTimestamp(int64(i))
+			operator.ProcessWatermark(element.Watermark(i))
 			if i >= 780 {
 				time.Sleep(20 * time.Millisecond)
 				operator.ProcessEvent1(&element.Event[string]{

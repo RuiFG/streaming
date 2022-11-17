@@ -23,14 +23,14 @@ func (c *collector[T]) EmitEvent(event *element.Event[T]) {
 	})
 }
 
-func (c *collector[T]) EmitWatermark(watermark *element.Watermark[T]) {
+func (c *collector[T]) EmitWatermark(watermark element.Watermark) {
 	c.Emit(ElementOrBarrier{
 		Upstream: c.upstream,
 		Value:    watermark,
 	})
 }
 
-func (c *collector[T]) EmitWatermarkStatus(watermarkStatus *element.WatermarkStatus[T]) {
+func (c *collector[T]) EmitWatermarkStatus(watermarkStatus element.WatermarkStatus) {
 	c.Emit(ElementOrBarrier{
 		Upstream: c.upstream,
 		Value:    watermarkStatus,

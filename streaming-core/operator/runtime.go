@@ -30,34 +30,34 @@ func (r *Runtime[IN1, IN2, OUT]) Close() error {
 	return r.Operator.Close()
 }
 
-func (r *Runtime[IN1, IN2, OUT]) ProcessWatermark1(watermark *element.Watermark[IN1]) {
-	r.processWatermarkTimestamp(watermark.Timestamp, 1)
+func (r *Runtime[IN1, IN2, OUT]) ProcessWatermark1(watermark element.Watermark) {
+	r.processWatermark(watermark, 1)
 }
 
-func (r *Runtime[IN1, IN2, OUT]) ProcessWatermark2(watermark *element.Watermark[IN2]) {
-	r.processWatermarkTimestamp(watermark.Timestamp, 2)
+func (r *Runtime[IN1, IN2, OUT]) ProcessWatermark2(watermark element.Watermark) {
+	r.processWatermark(watermark, 2)
 }
 
-func (r *Runtime[IN1, IN2, OUT]) processWatermarkTimestamp(watermarkTimestamp int64, input int) {
-	if r.combineWatermark.UpdateWatermarkTimestamp(watermarkTimestamp, input) {
-		r.Operator.ProcessWatermarkTimestamp(r.combineWatermark.GetCombinedWatermarkTimestamp())
+func (r *Runtime[IN1, IN2, OUT]) processWatermark(watermark element.Watermark, input int) {
+	if r.combineWatermark.UpdateWatermarkTimestamp(int64(watermark), input) {
+		r.Operator.ProcessWatermark(element.Watermark(r.combineWatermark.GetCombinedWatermarkTimestamp()))
 	}
 }
 
-func (r *Runtime[IN1, IN2, OUT]) ProcessWatermarkStatus1(watermarkStatus *element.WatermarkStatus[IN1]) {
-	r.processWatermarkStatusType(watermarkStatus.StatusType, 1)
+func (r *Runtime[IN1, IN2, OUT]) ProcessWatermarkStatus1(watermarkStatus element.WatermarkStatus) {
+	r.processWatermarkStatus(watermarkStatus, 1)
 }
 
-func (r *Runtime[IN1, IN2, OUT]) ProcessWatermarkStatus2(watermarkStatus *element.WatermarkStatus[IN2]) {
-	r.processWatermarkStatusType(watermarkStatus.StatusType, 2)
+func (r *Runtime[IN1, IN2, OUT]) ProcessWatermarkStatus2(watermarkStatus element.WatermarkStatus) {
+	r.processWatermarkStatus(watermarkStatus, 2)
 }
 
-func (r *Runtime[IN1, IN2, OUT]) processWatermarkStatusType(watermarkStatusType element.WatermarkStatusType, input int) {
+func (r *Runtime[IN1, IN2, OUT]) processWatermarkStatus(watermarkStatus element.WatermarkStatus, input int) {
 	wasIdle := r.combineWatermark.IsIdle()
-	if r.combineWatermark.UpdateIdle(watermarkStatusType == element.IdleWatermarkStatus, input) {
-		r.ProcessWatermarkTimestamp(r.combineWatermark.GetCombinedWatermarkTimestamp())
+	if r.combineWatermark.UpdateIdle(watermarkStatus == element.IdleWatermarkStatus, input) {
+		r.ProcessWatermark(element.Watermark(r.combineWatermark.GetCombinedWatermarkTimestamp()))
 	}
 	if wasIdle != r.combineWatermark.IsIdle() {
-		r.Operator.ProcessWatermarkStatus(watermarkStatusType)
+		r.Operator.ProcessWatermarkStatus(watermarkStatus)
 	}
 }

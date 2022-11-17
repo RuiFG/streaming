@@ -28,8 +28,8 @@ type Operator[IN1, IN2, OUT any] interface {
 
 	ProcessEvent1(event *element.Event[IN1])
 	ProcessEvent2(event *element.Event[IN2])
-	ProcessWatermarkTimestamp(watermarkTimestamp int64)
-	ProcessWatermarkStatus(watermarkStatus element.WatermarkStatusType)
+	ProcessWatermark(watermark element.Watermark)
+	ProcessWatermarkStatus(watermarkStatus element.WatermarkStatus)
 }
 
 type NewOperator[IN1, IN2, OUT any] func() Operator[IN1, IN2, OUT]
@@ -50,7 +50,7 @@ type Sink[IN any] interface {
 	Close() error
 
 	ProcessEvent(event *element.Event[IN])
-	ProcessWatermarkTimestamp(watermarkTimestamp int64)
+	ProcessWatermark(watermark element.Watermark)
 }
 
 type NewSink[IN any] func() Sink[IN]

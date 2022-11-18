@@ -3,19 +3,20 @@ package main
 import (
 	"fmt"
 	mockSink "github.com/RuiFG/streaming/streaming-connector/mock-connector/sink"
+	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-operator/watermark"
-
+	"github.com/pkg/profile"
 	//kafkaSource "github.com/RuiFG/streaming/streaming-connector/kafka-connector/source"
 	mockSource "github.com/RuiFG/streaming/streaming-connector/mock-connector/source"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/stream"
 	_map "github.com/RuiFG/streaming/streaming-operator/map"
-	"github.com/pkg/profile"
 	"sync/atomic"
 	"time"
 )
 
 func main() {
+
 	var counter int64 = 0
 	defer profile.Start().Stop()
 	log.Setup(log.DefaultOptions().WithOutputEncoder(log.ConsoleOutputEncoder).WithLevel(log.DebugLevel))
@@ -34,25 +35,26 @@ func main() {
 	//}, "kafka")
 	sourceStream, _ := mockSource.FormSource(env, func() string {
 		return "123"
-	}, time.Second, 10000000, "mock")
-	apply, _ := _map.Apply([]stream.Stream[string]{sourceStream}, func(string2 string) string {
+	}, time.Second, 1000000, "mock")
+	apply, _ := _map.Apply[string, string](sourceStream, func(string2 string) string {
 		return string2
 	}, "mm")
-	aaa, _ := watermark.Apply([]stream.Stream[string]{apply},
+	aaa, _ := watermark.Apply[string](apply,
 		watermark.NewBoundedOutOfOrderlinessWatermarkGeneratorFn[string](0),
 		func(string2 string) int64 {
 			return time.Now().UnixMilli()
 		}, 1*time.Second, "process time")
 
-	if err := mockSink.ToSink([]stream.Stream[string]{aaa},
+	if err := mockSink.ToSink[string](aaa,
 		func(in string) {
 			atomic.AddInt64(&counter, 1)
 		},
-		func(timestamp int64) {
+		func(timestamp element.Watermark) {
 			fmt.Printf("current watermark timestamp %d\n", timestamp)
 		}, "sink"); err != nil {
 		panic(err)
 	}
+	time.Sleep(1 * time.Second)
 	_ = env.Start()
 	//env.RegisterBarrierTrigger(func(channel chan<- task.BarrierType) {
 	//	for true {

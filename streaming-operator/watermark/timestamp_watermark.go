@@ -31,14 +31,12 @@ func (o *timestampAndWatermarkOperator[T]) Open(ctx Context, elementCollector el
 	return nil
 }
 
-func (o *timestampAndWatermarkOperator[T]) ProcessEvent1(event *element.Event[T]) {
+func (o *timestampAndWatermarkOperator[T]) ProcessEvent(event *element.Event[T]) {
 	timestamp := o.timestampAssigner(event.Value)
 	event.Timestamp = timestamp
 	o.elementCollector.EmitEvent(event)
 	o.watermarkGenerator.OnEvent(event.Value, timestamp, o.watermarkCollector)
 }
-
-func (o *timestampAndWatermarkOperator[T]) ProcessEvent2(_ *element.Event[any]) {}
 
 func (o *timestampAndWatermarkOperator[T]) OnProcessingTime(_ Timer[struct{}]) {
 	o.watermarkGenerator.OnPeriodicEmit(o.watermarkCollector)
@@ -54,19 +52,17 @@ func (o *timestampAndWatermarkOperator[T]) ProcessWatermarkTimestamp(watermarkTi
 	}
 }
 
-func Apply[T any](upstreams []stream.Stream[T],
+func Apply[T any](upstream stream.Stream[T],
 	generatorFn GeneratorFn[T],
 	timestampAssignerFn TimestampAssignerFn[T],
 	autoWatermarkInterval time.Duration,
 	name string, applyFns ...stream.WithOperatorStreamOptions[T, any, T]) (*stream.OperatorStream[T, any, T], error) {
 	options := stream.ApplyWithOperatorStreamOptionsFns(applyFns)
 	options.Name = name
-	options.New = func() Operator[T, any, T] {
-		return &timestampAndWatermarkOperator[T]{
-			watermarkGenerator:    generatorFn,
-			timestampAssigner:     timestampAssignerFn,
-			autoWatermarkInterval: autoWatermarkInterval,
-		}
-	}
-	return stream.ApplyOneInput(upstreams, options)
+	options.Operator = OneInputOperatorToNormal[T, T](&timestampAndWatermarkOperator[T]{
+		watermarkGenerator:    generatorFn,
+		timestampAssigner:     timestampAssignerFn,
+		autoWatermarkInterval: autoWatermarkInterval,
+	})
+	return stream.ApplyOneInput(upstream, options)
 }

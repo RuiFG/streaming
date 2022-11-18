@@ -11,7 +11,7 @@ import (
 type Fn[T any] func() T
 
 type mockSource[OUT any] struct {
-	BaseOperator[any, any, OUT]
+	CheckpointListener
 	ctx       operator.Context
 	collector element.Collector[OUT]
 	doneChan  chan struct{}
@@ -53,10 +53,8 @@ func (s *mockSource[OUT]) Close() error {
 func FormSource[OUT any](env *stream.Env, GeneratorFn Fn[OUT], interval time.Duration, number int, name string, applyFns ...stream.WithSourceStreamOptions[OUT]) (*stream.SourceStream[OUT], error) {
 	options := stream.ApplyWithSourceStreamOptionsFns(applyFns)
 	options.Name = name
-	options.New = func() operator.Source[OUT] {
-		return &mockSource[OUT]{
-			Fn: GeneratorFn, interval: interval, number: number}
-	}
+	options.Source = &mockSource[OUT]{
+		Fn: GeneratorFn, interval: interval, number: number}
 	return stream.FormSource(env, options)
 
 }

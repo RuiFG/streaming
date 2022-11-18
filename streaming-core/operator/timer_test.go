@@ -6,7 +6,7 @@ import (
 )
 
 func TestTimerQueue_Peek(t *testing.T) {
-	qu := &timerQueue[string]{}
+	qu := &timerQueue[string]{dedupeMap: map[Timer[string]]struct{}{}}
 	qu.PushTimer(Timer[string]{
 		Content:   "tt",
 		Timestamp: 2,
@@ -26,7 +26,7 @@ func TestTimerQueue_Peek(t *testing.T) {
 }
 
 func TestTimerInternalHeap_Pop(t *testing.T) {
-	qu := &timerQueue[string]{}
+	qu := &timerQueue[string]{dedupeMap: map[Timer[string]]struct{}{}}
 	qu.PushTimer(Timer[string]{
 		Content:   "tt",
 		Timestamp: 2,
@@ -48,7 +48,7 @@ func TestTimerInternalHeap_Pop(t *testing.T) {
 }
 
 func TestTimerQueue_Remove(t *testing.T) {
-	qu := &timerQueue[string]{}
+	qu := &timerQueue[string]{dedupeMap: map[Timer[string]]struct{}{}}
 	qu.PushTimer(Timer[string]{
 		Content:   "tt",
 		Timestamp: 2,

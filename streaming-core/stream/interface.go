@@ -18,11 +18,11 @@ type Stream[T any] interface {
 	Env() *Env
 	//Name returns the name of the task to be created.
 	Name() string
-	addDownstream(name string, downstreamInitFn downstreamInitFn[T])
+	addDownstream(name string, downstreamInitFn downstreamInitFn)
 	addUpstream(name string)
 }
 
 // downstreamInitFn is
-type downstreamInitFn[T any] func(upstream string) (task.Emit, []task.Task, error)
+type downstreamInitFn func() (task.Emit, []*task.Task, error)
 
-type sourceInitFn func() (task.Task, []task.Task, error)
+type sourceInitFn func() (*task.Task, []*task.Task, error)

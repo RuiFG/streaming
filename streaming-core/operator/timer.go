@@ -22,6 +22,17 @@ type Timer[T comparable] struct {
 	Timestamp int64
 }
 
+// timerQueue[T] is a priority queue,
+// sorted from smallest to largest according to Timer.Timestamp,
+// and use dedupeMap to prevent the same Timer from being inserted.
+// If timestamps are inserted in this order
+// +---+     +---+     +---+     +---+     +-------------+     +---+
+// | 2 | --> | 5 | --> | 3 | --> | 1 | --> | duplicate:3 | --> | 7 |
+// +---+     +---+     +---+     +---+     +-------------+     +---+
+// items:
+// +---+     +---+     +---+     +---+     +---+
+// | 1 | --> | 2 | --> | 3 | --> | 5 | --> | 7 |
+// +---+     +---+     +---+     +---+     +---+
 type timerQueue[T comparable] struct {
 	items     []Timer[T]
 	dedupeMap map[Timer[T]]struct{}

@@ -1,7 +1,6 @@
 package task
 
 import (
-	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
 )
@@ -14,29 +13,28 @@ const (
 	ExactlyOnce
 )
 
-type Options[IN1, IN2, OUT any] struct {
+// Data like element.NormalElement
+type Data any
+
+type Emit func(Data)
+
+type internalData struct {
+	index int
+	eob   Data
+}
+
+type Options struct {
 	Name               string
+	Operator           operator.NormalOperator
 	QOS                QOS
 	BarrierSignalChan  chan Signal
 	BarrierTriggerChan chan BarrierType
 
-	ElementListeners []element.Listener[IN1, IN2, OUT]
-	//sink Emit is nil
-	Emit Emit
-	New  operator.NewOperator[IN1, IN2, OUT]
+	//sink EmitNext is nil
+	EmitNext Emit
 
 	InputCount   int
 	OutputCount  int
 	ChannelSize  int
 	StoreManager store.Manager
-}
-
-type Task interface {
-	Name() string
-	//Daemon  Running is life cycle
-	Daemon() error
-	Running() bool
-
-	BarrierTrigger
-	BarrierListener
 }

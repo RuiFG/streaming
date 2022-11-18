@@ -1,9 +1,5 @@
 package task
 
-import (
-	"github.com/RuiFG/streaming/streaming-core/element"
-)
-
 type BarrierType uint
 
 const (
@@ -28,10 +24,6 @@ type Barrier struct {
 	Id int64
 	BarrierType
 }
-type InputProcessor[IN1, IN2 any] interface {
-	OnElement1(element.Element[IN1])
-	OnElement2(element.Element[IN2])
-}
 
 type BarrierTrigger interface {
 	TriggerBarrier(barrier Barrier)
@@ -42,52 +34,36 @@ type BarrierListener interface {
 	NotifyBarrierCancel(barrier Barrier)
 }
 
+type dataProcessor interface {
+	ProcessData(data internalData)
+}
+
 // BarrierAligner for block an input until all barriers are received
-type BarrierAligner[IN1, IN2 any] struct {
+type BarrierAligner struct {
 	BarrierTrigger
-	inputProcessor   InputProcessor[IN1, IN2]
+	processor        dataProcessor
 	inputCount       int
 	currentBarrierId int64
-	blockedUpstream  map[string]struct{}
-	buffer           []ElementOrBarrier
+	blockedIndexes   map[int]struct{}
+	buffer           []internalData
 }
 
-func (h *BarrierAligner[IN1, IN2]) OnElementOrBarrier1(e1 ElementOrBarrier) {
-	h.onElementOrBarrier(e1)
-}
-
-func (h *BarrierAligner[IN1, IN2]) OnElementOrBarrier2(e2 ElementOrBarrier) {
-	h.onElementOrBarrier(e2)
-}
-
-func (h *BarrierAligner[IN1, IN2]) onElementOrBarrier(origin ElementOrBarrier) {
-	switch e := origin.Value.(type) {
-	case Barrier:
-		h.processBarrierDetail(e, origin.Upstream)
-	case element.Element[IN1]:
+func (h *BarrierAligner) Handler(data internalData) {
+	if barrier, ok := data.eob.(Barrier); ok {
+		h.processBarrierDetail(barrier, data.index)
+	} else {
 		//if blocking, save to buffer
-		if h.inputCount > 1 && len(h.blockedUpstream) > 0 {
-			if _, ok := h.blockedUpstream[origin.Upstream]; ok {
-				h.buffer = append(h.buffer, origin)
+		if h.inputCount > 1 && len(h.blockedIndexes) > 0 {
+			if _, ok := h.blockedIndexes[data.index]; ok {
+				h.buffer = append(h.buffer, data)
 				return
 			}
 		}
-		h.inputProcessor.OnElement1(e)
-	case element.Element[IN2]:
-		//if blocking, save to buffer
-		if h.inputCount > 1 && len(h.blockedUpstream) > 0 {
-			if _, ok := h.blockedUpstream[origin.Upstream]; ok {
-				h.buffer = append(h.buffer, origin)
-				return
-			}
-		}
-		h.inputProcessor.OnElement2(e)
-	default:
-		panic("an impossible error.")
+		h.processor.ProcessData(data)
 	}
 }
 
-func (h *BarrierAligner[IN1, IN2]) processBarrierDetail(barrier Barrier, upstream string) {
+func (h *BarrierAligner) processBarrierDetail(barrier Barrier, index int) {
 	//h.logger.Debugf("aligner process barrier %+v", barrierDetail)
 	if h.inputCount == 1 {
 		if barrier.Id > h.currentBarrierId {
@@ -96,58 +72,58 @@ func (h *BarrierAligner[IN1, IN2]) processBarrierDetail(barrier Barrier, upstrea
 		}
 		return
 	}
-	if len(h.blockedUpstream) > 0 {
+	if len(h.blockedIndexes) > 0 {
 		if barrier.Id == h.currentBarrierId {
-			h.onUpstream(upstream)
+			h.onUpstream(index)
 		} else if barrier.Id > h.currentBarrierId {
 			//h.logger.Infof("received checkpoint barrier for checkpoint %d before complete current checkpoint %d. skipping current checkpoint.", b.CheckpointId, h.currentBarrierId)
 
 			h.releaseBlocksAndResetBarriers()
-			h.beginNewAlignment(barrier, upstream)
+			h.beginNewAlignment(barrier, index)
 		} else {
 			return
 		}
 	} else if barrier.Id > h.currentBarrierId {
 		//h.logger.Debugf("aligner process new alignment", b)
-		h.beginNewAlignment(barrier, upstream)
+		h.beginNewAlignment(barrier, index)
 	} else {
 		return
 	}
-	if len(h.blockedUpstream) == h.inputCount {
+	if len(h.blockedIndexes) == h.inputCount {
 		//h.logger.Debugf("received all barriers, triggering checkpoint %d", b.CheckpointId)
 		h.BarrierTrigger.TriggerBarrier(barrier)
 
 		h.releaseBlocksAndResetBarriers()
 		// clean up all the buffer
 		for _, eAny := range h.buffer {
-			h.onElementOrBarrier(eAny)
+			h.Handler(eAny)
 		}
-		h.buffer = make([]ElementOrBarrier, 0)
+		h.buffer = make([]internalData, 0)
 	}
 }
 
-func (h *BarrierAligner[IN1, IN2]) onUpstream(upstream string) {
-	if _, ok := h.blockedUpstream[upstream]; !ok {
-		h.blockedUpstream[upstream] = struct{}{}
+func (h *BarrierAligner) onUpstream(index int) {
+	if _, ok := h.blockedIndexes[index]; !ok {
+		h.blockedIndexes[index] = struct{}{}
 		//h.logger.Debugf("received barrierDetail from channel %s", barrierDetail.Name)
 	}
 }
 
-func (h *BarrierAligner[IN1, IN2]) releaseBlocksAndResetBarriers() {
-	h.blockedUpstream = make(map[string]struct{})
+func (h *BarrierAligner) releaseBlocksAndResetBarriers() {
+	h.blockedIndexes = make(map[int]struct{})
 }
 
-func (h *BarrierAligner[IN1, IN2]) beginNewAlignment(barrier Barrier, upstream string) {
+func (h *BarrierAligner) beginNewAlignment(barrier Barrier, index int) {
 	h.currentBarrierId = barrier.Id
-	h.onUpstream(upstream)
+	h.onUpstream(index)
 	//h.logger.Debugf("starting stream alignment for checkpoint %d", barrier.CheckpointId)
 }
 
-func NewBarrierAligner[IN1, IN2 any](inputProcessor InputProcessor[IN1, IN2], trigger BarrierTrigger, inputCount int) *BarrierAligner[IN1, IN2] {
-	return &BarrierAligner[IN1, IN2]{
-		inputProcessor:  inputProcessor,
-		BarrierTrigger:  trigger,
-		inputCount:      inputCount,
-		blockedUpstream: map[string]struct{}{},
+func NewBarrierAligner(processor dataProcessor, trigger BarrierTrigger, inputCount int) *BarrierAligner {
+	return &BarrierAligner{
+		processor:      processor,
+		BarrierTrigger: trigger,
+		inputCount:     inputCount,
+		blockedIndexes: map[int]struct{}{},
 	}
 }

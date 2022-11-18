@@ -18,27 +18,24 @@ type operator[IN any, OUT any] struct {
 	Fn Fn[IN, OUT]
 }
 
-func (m *operator[IN, OUT]) ProcessEvent1(event *element.Event[IN]) {
+func (m *operator[IN, OUT]) ProcessEvent(event *element.Event[IN]) {
 	m.Collector.EmitEvent(&element.Event[OUT]{Value: m.Fn(event.Value), Timestamp: event.Timestamp})
 }
 
-func Apply[IN, OUT any](upstreams []stream.Stream[IN], fn Fn[IN, OUT], name string, applyFns ...stream.WithOperatorStreamOptions[IN, any, OUT]) (*stream.OperatorStream[IN, any, OUT], error) {
+func Apply[IN, OUT any](upstream stream.Stream[IN], fn Fn[IN, OUT], name string, applyFns ...stream.WithOperatorStreamOptions[IN, any, OUT]) (*stream.OperatorStream[IN, any, OUT], error) {
 	options := stream.ApplyWithOperatorStreamOptionsFns(applyFns)
 	options.Name = name
-	options.New = func() Operator[IN, any, OUT] {
-		return &operator[IN, OUT]{Fn: fn}
-	}
-	return stream.ApplyOneInput(upstreams, options)
+	options.Operator = OneInputOperatorToNormal[IN, OUT](&operator[IN, OUT]{Fn: fn})
+	return stream.ApplyOneInput(upstream, options)
 }
 
-func ApplyRich[IN, OUT any](upstreams []stream.Stream[IN], richFn RichFn[IN, OUT], name string, applyFns ...stream.WithOperatorStreamOptions[IN, any, OUT]) (*stream.OperatorStream[IN, any, OUT], error) {
+func ApplyRich[IN, OUT any](upstream stream.Stream[IN], richFn RichFn[IN, OUT], name string, applyFns ...stream.WithOperatorStreamOptions[IN, any, OUT]) (*stream.OperatorStream[IN, any, OUT], error) {
 	options := stream.ApplyWithOperatorStreamOptionsFns(applyFns)
 	options.Name = name
-	options.New = func() Operator[IN, any, OUT] {
-		return &operator[IN, OUT]{
+	options.Operator = OneInputOperatorToNormal[IN, OUT](
+		&operator[IN, OUT]{
 			Fn:               richFn.Apply,
 			BaseRichOperator: BaseRichOperator[IN, any, OUT]{Rich: richFn},
-		}
-	}
-	return stream.ApplyOneInput[IN, OUT](upstreams, options)
+		})
+	return stream.ApplyOneInput[IN, OUT](upstream, options)
 }

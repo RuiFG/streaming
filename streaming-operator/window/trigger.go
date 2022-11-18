@@ -51,7 +51,7 @@ const (
 type EventTimeTrigger[KEY comparable, T any] struct {
 }
 
-func (e *EventTimeTrigger[KEY, T]) OnElement(ctx WContext[KEY], window Window, key KEY, value T) TriggerResult {
+func (e *EventTimeTrigger[KEY, T]) OnElement(ctx WContext[KEY], window Window, key KEY, _ T) TriggerResult {
 	if window.MaxTimestamp() <= ctx.CurrentEventTimestamp() {
 		// if the watermark is already past the window fire immediately
 		return Fire
@@ -75,7 +75,7 @@ func (e *EventTimeTrigger[KEY, T]) OnEventTimer(timer Timer[KeyAndWindow[KEY]]) 
 	}
 }
 
-func (e *EventTimeTrigger[KEY, T]) OnProcessingTimer(timer Timer[KeyAndWindow[KEY]]) TriggerResult {
+func (e *EventTimeTrigger[KEY, T]) OnProcessingTimer(_ Timer[KeyAndWindow[KEY]]) TriggerResult {
 	return Continue
 }
 
@@ -90,15 +90,15 @@ func NewEventTimeTrigger[KEY comparable, T any]() TriggerFn[KEY, T] {
 type ProcessingTimeTrigger[KEY comparable, T any] struct {
 }
 
-func (p *ProcessingTimeTrigger[KEY, T]) OnElement(ctx WContext[KEY], window Window, key KEY, value T) TriggerResult {
+func (p *ProcessingTimeTrigger[KEY, T]) OnElement(_ WContext[KEY], _ Window, _ KEY, _ T) TriggerResult {
 	return Continue
 }
 
-func (p *ProcessingTimeTrigger[KEY, T]) OnEventTimer(timer Timer[KeyAndWindow[KEY]]) TriggerResult {
+func (p *ProcessingTimeTrigger[KEY, T]) OnEventTimer(_ Timer[KeyAndWindow[KEY]]) TriggerResult {
 	return Continue
 }
 
-func (p *ProcessingTimeTrigger[KEY, T]) OnProcessingTimer(timer Timer[KeyAndWindow[KEY]]) TriggerResult {
+func (p *ProcessingTimeTrigger[KEY, T]) OnProcessingTimer(_ Timer[KeyAndWindow[KEY]]) TriggerResult {
 	return Fire
 }
 

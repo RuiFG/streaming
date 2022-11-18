@@ -15,7 +15,7 @@ type pendingBarrier struct {
 	notYetAckTasks map[string]bool
 }
 
-func newPendingBarrier(barrier Barrier, tasksToWaitFor []Task) *pendingBarrier {
+func newPendingBarrier(barrier Barrier, tasksToWaitFor []*Task) *pendingBarrier {
 	pc := &pendingBarrier{Barrier: barrier}
 	nyat := make(map[string]bool)
 	for _, _task := range tasksToWaitFor {
@@ -63,13 +63,13 @@ func (s *barrierStore) add(c *completedBarrier) {
 	}
 }
 
-// Coordinator ensure OperatorTask barrier coordination
+// Coordinator ensure Task barrier coordination
 type Coordinator struct {
 	ctx                  _c.Context
 	cancelFunc           _c.CancelFunc
 	logger               log.Logger
-	tasksToTrigger       []Task
-	tasksToWaitFor       []Task
+	tasksToTrigger       []*Task
+	tasksToWaitFor       []*Task
 	pendingBarriers      *sync.Map
 	completedCheckpoints *barrierStore
 
@@ -101,7 +101,7 @@ func (c *Coordinator) Activate() {
 			}
 			for _, _task := range c.tasksToWaitFor {
 				if !_task.Running() {
-					c.logger.Infof("OperatorTask %s is not running, cancel it.", _task.Name())
+					c.logger.Infof("Task %s is not running, cancel it.", _task.Name())
 					return
 				}
 			}
@@ -111,7 +111,7 @@ func (c *Coordinator) Activate() {
 			c.pendingBarriers.Store(barrier, pending)
 			//let the sources send out a barrier
 			for _, r := range c.tasksToTrigger {
-				go func(life Task) {
+				go func(life *Task) {
 					life.TriggerBarrier(barrier)
 				}(r)
 			}
@@ -221,7 +221,7 @@ func (c *Coordinator) notifyComplete(barrier Barrier) {
 			_task.NotifyBarrierComplete(barrier)
 			return nil
 		}); err != nil {
-			c.logger.Warnw("failed to notify checkpoint complete.", "OperatorTask", name, "err", err)
+			c.logger.Warnw("failed to notify checkpoint complete.", "Task", name, "err", err)
 		}
 	}
 }
@@ -232,14 +232,14 @@ func (c *Coordinator) notifyCancel(barrier Barrier) {
 			_task.NotifyBarrierCancel(barrier)
 			return nil
 		}); err != nil {
-			c.logger.Warnw("failed to notify checkpoint cancel.", "OperatorTask", _task.Name(), "err", err)
+			c.logger.Warnw("failed to notify checkpoint cancel.", "Task", _task.Name(), "err", err)
 		}
 	}
 }
 
 func NewCoordinator(
-	tasksToTrigger []Task,
-	tasksToWaitFor []Task,
+	tasksToTrigger []*Task,
+	tasksToWaitFor []*Task,
 	storeBackend store.Backend,
 	barrierSignalChan chan Signal,
 	barrierTriggerChan chan BarrierType,

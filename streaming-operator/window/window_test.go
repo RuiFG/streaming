@@ -79,7 +79,7 @@ func TestAggregateEventTime(t *testing.T) {
 			operator.ProcessWatermark(element.Watermark(i))
 			if i >= 780 {
 				time.Sleep(20 * time.Millisecond)
-				operator.ProcessEvent1(&element.Event[string]{
+				operator.ProcessEvent(&element.Event[string]{
 					Value:        "delay",
 					Timestamp:    int64(i) - 200,
 					HasTimestamp: true,
@@ -88,7 +88,7 @@ func TestAggregateEventTime(t *testing.T) {
 
 		}
 
-		operator.ProcessEvent1(&element.Event[string]{
+		operator.ProcessEvent(&element.Event[string]{
 			Value:        strconv.Itoa(i),
 			Timestamp:    int64(i),
 			HasTimestamp: true,

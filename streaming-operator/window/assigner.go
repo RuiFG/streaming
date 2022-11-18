@@ -5,7 +5,7 @@ type TumblingEventTimeAssigner[KEY comparable, T any] struct {
 	globalOffset int64
 }
 
-func (t *TumblingEventTimeAssigner[KEY, T]) AssignWindows(ctx WContext[KEY], value T, eventTimestamp int64) []Window {
+func (t *TumblingEventTimeAssigner[KEY, T]) AssignWindows(_ WContext[KEY], _ T, eventTimestamp int64) []Window {
 	startTimestamp := getWindowStartWithOffset(eventTimestamp, t.globalOffset%t.size, t.size)
 	return []Window{{startTimestamp: startTimestamp, endTimestamp: startTimestamp + t.size}}
 }
@@ -26,7 +26,7 @@ type TumblingProcessingTimeAssigner[KEY comparable, T any] struct {
 	globalOffset int64
 }
 
-func (t *TumblingProcessingTimeAssigner[KEY, T]) AssignWindows(ctx WContext[KEY], value T, eventTimestamp int64) []Window {
+func (t *TumblingProcessingTimeAssigner[KEY, T]) AssignWindows(ctx WContext[KEY], _ T, _ int64) []Window {
 	startTimestamp := getWindowStartWithOffset(ctx.CurrentProcessingTimestamp(), t.globalOffset%t.size, t.size)
 	return []Window{{startTimestamp: startTimestamp, endTimestamp: startTimestamp + t.size}}
 }

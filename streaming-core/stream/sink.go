@@ -8,7 +8,7 @@ import (
 
 type SinkStreamOptions[IN any] struct {
 	Options
-	New              operator.NewSink[IN]
+	Sink             operator.Sink[IN]
 	ElementListeners []element.Listener[IN, any, any]
 }
 
@@ -26,35 +26,23 @@ type SinkStream[IN any] struct {
 	OperatorStream[IN, any, any]
 }
 
-func ToSink[IN any](upstreams []Stream[IN], sinkOptions SinkStreamOptions[IN]) error {
-	var env *Env
-	for _, upstream := range upstreams {
-		if env == nil {
-			env = upstream.Env()
-		} else if env != upstream.Env() {
-			return ErrMultipleEnv
-		}
-	}
-
+func ToSink[IN any](upstream Stream[IN], sinkOptions SinkStreamOptions[IN]) error {
 	sinkStream := &SinkStream[IN]{
 		OperatorStream[IN, any, any]{
 			options: OperatorStreamOptions[IN, any, any]{
 				Options: sinkOptions.Options,
-				New: func() operator.Operator[IN, any, any] {
-					return &operator.SinkOperatorWrap[IN]{
-						Sink: sinkOptions.New(),
-					}
-				},
+				Operator: operator.OneInputOperatorToNormal[IN, any](
+					&operator.SinkOperatorWrap[IN]{
+						Sink: sinkOptions.Sink,
+					}),
 				ElementListeners: sinkOptions.ElementListeners,
 			},
-			env:         env,
+			env:         upstream.Env(),
 			upstreamMap: map[string]struct{}{},
 			once:        &sync.Once{},
 		},
 	}
-	for _, upstream := range upstreams {
-		upstream.addDownstream(sinkStream.Name(), sinkStream.Init1)
-		sinkStream.addUpstream(upstream.Name())
-	}
+	upstream.addDownstream(sinkStream.Name(), sinkStream.Init(0))
+	sinkStream.addUpstream(upstream.Name())
 	return nil
 }

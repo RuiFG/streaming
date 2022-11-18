@@ -54,7 +54,7 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) Open(ctx Context, collector element.C
 
 }
 
-func (a *operator[KEY, IN, ACC, WIN, OUT]) ProcessEvent1(e *element.Event[IN]) {
+func (a *operator[KEY, IN, ACC, WIN, OUT]) ProcessEvent(e *element.Event[IN]) {
 	isSkip := true
 	key := a.SelectorFn(e.Value)
 	windows := a.AssignWindows(a.windowCtx, e.Value, e.Timestamp)
@@ -197,7 +197,7 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) cleanupTime(window Window) int64 {
 	}
 }
 
-func Aggregate[KEY comparable, IN, OUT any](upstreams []stream.Stream[IN],
+func Aggregate[KEY comparable, IN, OUT any](upstream stream.Stream[IN],
 	selector SelectorFn[KEY, IN],
 	trigger TriggerFn[KEY, IN],
 	assigner AssignerFn[KEY, IN],
@@ -206,16 +206,14 @@ func Aggregate[KEY comparable, IN, OUT any](upstreams []stream.Stream[IN],
 	name string, applyFns ...stream.WithOperatorStreamOptions[IN, any, OUT]) (*stream.OperatorStream[IN, any, OUT], error) {
 	options := stream.ApplyWithOperatorStreamOptionsFns(applyFns)
 	options.Name = name
-	options.New = func() Operator[IN, any, OUT] {
-		return &operator[KEY, IN, OUT, OUT, OUT]{
-			BaseOperator:    BaseOperator[IN, any, OUT]{},
-			SelectorFn:      selector,
-			TriggerFn:       trigger,
-			AssignerFn:      assigner,
-			AggregatorFn:    aggregator,
-			AllowedLateness: allowedLateness,
-			ProcessWindowFn: &PassThroughProcessWindowFn[KEY, OUT]{},
-		}
-	}
-	return stream.ApplyOneInput[IN, OUT](upstreams, options)
+	options.Operator = OneInputOperatorToNormal[IN, OUT](&operator[KEY, IN, OUT, OUT, OUT]{
+		BaseOperator:    BaseOperator[IN, any, OUT]{},
+		SelectorFn:      selector,
+		TriggerFn:       trigger,
+		AssignerFn:      assigner,
+		AggregatorFn:    aggregator,
+		AllowedLateness: allowedLateness,
+		ProcessWindowFn: &PassThroughProcessWindowFn[KEY, OUT]{},
+	})
+	return stream.ApplyOneInput[IN, OUT](upstream, options)
 }

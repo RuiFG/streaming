@@ -9,7 +9,7 @@ import (
 
 type SourceStreamOptions[OUT any] struct {
 	Options
-	New              operator.NewSource[OUT]
+	Source           operator.Source[OUT]
 	ElementListeners []element.Listener[any, any, OUT]
 }
 
@@ -27,7 +27,7 @@ type SourceStream[OUT any] struct {
 	OperatorStream[any, any, OUT]
 }
 
-func (s *SourceStream[T]) Init() (task.Task, []task.Task, error) {
+func (s *SourceStream[T]) Init() (*task.Task, []*task.Task, error) {
 	s.init()
 	return s.task, s.downstreamTask, nil
 }
@@ -37,15 +37,13 @@ func FormSource[OUT any](env *Env, sourceOptions SourceStreamOptions[OUT]) (*Sou
 		OperatorStream[any, any, OUT]{
 			options: OperatorStreamOptions[any, any, OUT]{
 				Options: sourceOptions.Options,
-				New: func() operator.Operator[any, any, OUT] {
-					return &operator.SourceOperatorWrap[OUT]{
-						Source: sourceOptions.New(),
-					}
-				},
+				Operator: operator.OneInputOperatorToNormal[any, OUT](&operator.SourceOperatorWrap[OUT]{
+					Source: sourceOptions.Source,
+				}),
 				ElementListeners: sourceOptions.ElementListeners,
 			},
 			env:                 env,
-			downstreamInitFnMap: map[string]downstreamInitFn[OUT]{},
+			downstreamInitFnMap: map[string]downstreamInitFn{},
 			once:                &sync.Once{},
 		},
 	}

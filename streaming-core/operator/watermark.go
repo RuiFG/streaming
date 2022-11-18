@@ -3,14 +3,15 @@ package operator
 import (
 	"bytes"
 	"encoding/gob"
+	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/pkg/errors"
 	"math"
 )
 
 type PartialWatermark struct {
-	idle               bool
-	watermarkTimestamp int64
+	idle      bool
+	watermark element.Watermark
 }
 
 func (p *PartialWatermark) SetIdle(idle bool) {
@@ -21,57 +22,57 @@ func (p *PartialWatermark) IsIdle() bool {
 	return p.idle
 }
 
-func (p *PartialWatermark) GetWatermarkTimestamp() int64 {
-	return p.watermarkTimestamp
+func (p *PartialWatermark) GetWatermark() element.Watermark {
+	return p.watermark
 }
 
-func (p *PartialWatermark) UpdateWatermarkTimestamp(timestamp int64) {
+func (p *PartialWatermark) UpdateWatermark(watermark element.Watermark) {
 	p.idle = false
-	p.watermarkTimestamp = timestamp
+	p.watermark = watermark
 }
 
 type CombineWatermark struct {
-	Idle                       bool
-	CombinedWatermarkTimestamp int64
-	PartialWatermarks          []*PartialWatermark
+	Idle              bool
+	CombinedWatermark element.Watermark
+	PartialWatermarks []*PartialWatermark
 }
 
 func (c *CombineWatermark) IsIdle() bool {
 	return c.Idle
 }
 
-func (c *CombineWatermark) GetCombinedWatermarkTimestamp() int64 {
-	return c.CombinedWatermarkTimestamp
+func (c *CombineWatermark) GetCombinedWatermark() element.Watermark {
+	return c.CombinedWatermark
 }
 
-func (c *CombineWatermark) UpdateCombinedWatermarkTimestamp() bool {
-	var minimumOverAllOutputs int64 = math.MaxInt64
+func (c *CombineWatermark) UpdateCombinedWatermark() bool {
+	var minimumOverAllOutputs element.Watermark = math.MaxInt64
 	if len(c.PartialWatermarks) == 0 {
 		return false
 	}
 	allIdle := true
 	for _, pw := range c.PartialWatermarks {
 		if !pw.IsIdle() {
-			minimumOverAllOutputs = int64(math.Min(float64(minimumOverAllOutputs), float64(pw.GetWatermarkTimestamp())))
+			minimumOverAllOutputs = element.Watermark(math.Min(float64(minimumOverAllOutputs), float64(pw.GetWatermark())))
 			allIdle = false
 		}
 	}
 	c.Idle = allIdle
-	if !allIdle && minimumOverAllOutputs > c.CombinedWatermarkTimestamp {
-		c.CombinedWatermarkTimestamp = minimumOverAllOutputs
+	if !allIdle && minimumOverAllOutputs > c.CombinedWatermark {
+		c.CombinedWatermark = minimumOverAllOutputs
 		return true
 	}
 	return false
 }
 
-func (c *CombineWatermark) UpdateWatermarkTimestamp(timestamp int64, input int) bool {
-	c.PartialWatermarks[input-1].UpdateWatermarkTimestamp(timestamp)
-	return c.UpdateCombinedWatermarkTimestamp()
+func (c *CombineWatermark) UpdateWatermark(watermark element.Watermark, input int) bool {
+	c.PartialWatermarks[input-1].UpdateWatermark(watermark)
+	return c.UpdateCombinedWatermark()
 }
 
 func (c *CombineWatermark) UpdateIdle(idle bool, input int) bool {
 	c.PartialWatermarks[input-1].SetIdle(idle)
-	return c.UpdateCombinedWatermarkTimestamp()
+	return c.UpdateCombinedWatermark()
 }
 
 func NewCombineWatermark(inputs int) CombineWatermark {
@@ -80,9 +81,9 @@ func NewCombineWatermark(inputs int) CombineWatermark {
 		partialWatermarks = append(partialWatermarks, &PartialWatermark{true, math.MaxInt64})
 	}
 	return CombineWatermark{
-		Idle:                       true,
-		CombinedWatermarkTimestamp: math.MinInt64,
-		PartialWatermarks:          partialWatermarks,
+		Idle:              true,
+		CombinedWatermark: math.MinInt64,
+		PartialWatermarks: partialWatermarks,
 	}
 
 }

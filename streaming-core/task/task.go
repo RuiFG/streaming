@@ -10,43 +10,41 @@ import (
 	"sync"
 )
 
-type OperatorTask[IN1, IN2, OUT any] struct {
+type Task struct {
 	ctx        _c.Context
 	cancelFunc _c.CancelFunc
 	logger     log.Logger
-	Options[IN1, IN2, OUT]
+	Options
 
-	running    bool
-	rwMutex    *sync.RWMutex
-	collector  *collector[OUT]
-	input1Chan chan ElementOrBarrier
-	input2Chan chan ElementOrBarrier
+	running bool
+	rwMutex *sync.RWMutex
 
-	operatorRuntime *operator.Runtime[IN1, IN2, OUT]
-	callerChan      chan func()
+	inputChan chan internalData
 
-	barrierAligner *BarrierAligner[IN1, IN2]
+	normalOperator operator.NormalOperator
+	callerChan     chan func()
+
+	barrierAligner *BarrierAligner
+
+	elementEmit element.Emit
 }
 
-func (o *OperatorTask[IN1, IN2, OUT]) Name() string {
+func (o *Task) Name() string {
 	return o.Options.Name
 }
 
-func (o *OperatorTask[IN1, IN2, OUT]) Daemon() error {
+func (o *Task) Daemon() error {
 	o.logger.Info("staring...")
-	o.operatorRuntime = &operator.Runtime[IN1, IN2, OUT]{
-		Operator: o.New(),
-	}
-	o.collector = &collector[OUT]{upstream: o.Name(), Emit: o.OnElementOrBarrier}
-	o.input1Chan = make(chan ElementOrBarrier, o.ChannelSize)
-	o.input2Chan = make(chan ElementOrBarrier, o.ChannelSize)
-	o.barrierAligner = NewBarrierAligner[IN1, IN2](o, o, o.Options.InputCount)
+
+	o.inputChan = make(chan internalData, o.ChannelSize)
+	o.elementEmit = o.Emit
+	o.barrierAligner = NewBarrierAligner(o, o, o.Options.InputCount)
 
 	if err := safe.Run(func() error {
-		return o.operatorRuntime.Open(operator.NewContext(o.logger.Named("operator"),
+		return o.normalOperator.Open(operator.NewContext(o.logger.Named("operator"),
 			o.StoreManager.Controller(o.Name()),
 			o.callerChan, operator.NewTimerManager()),
-			o.collector)
+			o.elementEmit)
 	}); err != nil {
 		return errors.WithMessage(err, "failed to start task")
 	}
@@ -55,91 +53,60 @@ func (o *OperatorTask[IN1, IN2, OUT]) Daemon() error {
 		select {
 		case <-o.ctx.Done():
 			o.running = false
-			if err := o.operatorRuntime.Close(); err != nil {
+			if err := o.normalOperator.Close(); err != nil {
 				return err
 			}
 			return nil
 		case caller := <-o.callerChan:
 			caller()
-		case e1 := <-o.input1Chan:
-			o.barrierAligner.OnElementOrBarrier1(e1)
-			bufferSize := len(o.input1Chan)
+		case e1 := <-o.inputChan:
+			o.barrierAligner.Handler(e1)
+			bufferSize := len(o.inputChan)
 			for i := 0; i < bufferSize; i++ {
-				o.barrierAligner.OnElementOrBarrier1(<-o.input1Chan)
-			}
-		case e2 := <-o.input2Chan:
-			o.barrierAligner.OnElementOrBarrier2(e2)
-			bufferSize := len(o.input1Chan)
-			for i := 0; i < bufferSize; i++ {
-				o.barrierAligner.OnElementOrBarrier2(<-o.input2Chan)
+				o.barrierAligner.Handler(<-o.inputChan)
 			}
 		}
 	}
 }
 
-func (o *OperatorTask[IN1, IN2, OUT]) Running() bool {
+func (o *Task) Running() bool {
 	return o.running
 }
 
-func (o *OperatorTask[IN1, IN2, OUT]) Emit1(e1 ElementOrBarrier) {
-	o.input1Chan <- e1
-
+func (o *Task) Emit(element element.NormalElement) {
+	o.EmitNext(element)
 }
 
-func (o *OperatorTask[IN1, IN2, OUT]) Emit2(e2 ElementOrBarrier) {
-	o.input2Chan <- e2
+func (o *Task) MutexEmit(e element.NormalElement) {
+	o.rwMutex.RLock()
+	o.Emit(e)
+	o.rwMutex.RUnlock()
+}
+
+func (o *Task) InitEmit(index int) Emit {
+	return func(eob Data) {
+		o.inputChan <- internalData{
+			index: index,
+			eob:   eob,
+		}
+	}
 }
 
 // -------------------------------------Processor---------------------------------------------
 
-func (o *OperatorTask[IN1, IN2, OUT]) OnElement1(e1 element.Element[IN1]) {
-	for _, listener := range o.ElementListeners {
-		listener.NotifyInput1(e1)
-	}
-	switch e := e1.(type) {
-	case *element.Event[IN1]:
-		o.operatorRuntime.ProcessEvent1(e)
-	case element.Watermark:
-		o.operatorRuntime.ProcessWatermark1(e)
-	case element.WatermarkStatus:
-		o.operatorRuntime.ProcessWatermarkStatus1(e)
-	}
-}
-
-func (o *OperatorTask[IN1, IN2, OUT]) OnElement2(e2 element.Element[IN2]) {
-	for _, listener := range o.ElementListeners {
-		listener.NotifyInput2(e2)
-	}
-	switch e := e2.(type) {
-	case *element.Event[IN2]:
-		o.operatorRuntime.ProcessEvent2(e)
-	case element.Watermark:
-		o.operatorRuntime.ProcessWatermark2(e)
-	case element.WatermarkStatus:
-		o.operatorRuntime.ProcessWatermarkStatus2(e)
-	}
-
-}
-
-func (o *OperatorTask[IN1, IN2, OUT]) MutexOnElement(e ElementOrBarrier) {
-	o.rwMutex.RLock()
-	o.OnElementOrBarrier(e)
-	o.rwMutex.RUnlock()
-}
-
-func (o *OperatorTask[IN1, IN2, OUT]) OnElementOrBarrier(e ElementOrBarrier) {
-	o.Emit(e)
+func (o *Task) ProcessData(data internalData) {
+	o.normalOperator.ProcessElement(data.eob, data.index)
 }
 
 // -------------------------------------BarrierTrigger---------------------------------------------
 
-func (o *OperatorTask[IN1, IN2, OUT]) TriggerBarrier(barrier Barrier) {
+func (o *Task) TriggerBarrier(barrier Barrier) {
 	o.rwMutex.Lock()
-	o.collector.Emit = o.MutexOnElement
-	o.OnElementOrBarrier(ElementOrBarrier{Upstream: o.Name(), Value: barrier})
+	o.elementEmit = o.MutexEmit
+	o.Emit(barrier)
 	o.NotifyBarrierCome(barrier)
 	o.rwMutex.Unlock()
-	o.collector.Emit = o.OnElementOrBarrier
+	o.elementEmit = o.Emit
 	message := ACK
 	if err := o.StoreManager.Save(barrier.Id); err != nil {
 		message = DEC
@@ -154,32 +121,33 @@ func (o *OperatorTask[IN1, IN2, OUT]) TriggerBarrier(barrier Barrier) {
 
 // -------------------------------------BarrierListener-------------------------------------
 
-func (o *OperatorTask[IN1, IN2, OUT]) NotifyBarrierCome(barrier Barrier) {
-	o.operatorRuntime.NotifyCheckpointCome(barrier.Id)
+func (o *Task) NotifyBarrierCome(barrier Barrier) {
+	o.normalOperator.NotifyCheckpointCome(barrier.Id)
 }
 
-func (o *OperatorTask[IN1, IN2, OUT]) NotifyBarrierComplete(barrier Barrier) {
-	o.operatorRuntime.NotifyCheckpointComplete(barrier.Id)
+func (o *Task) NotifyBarrierComplete(barrier Barrier) {
+	o.normalOperator.NotifyCheckpointComplete(barrier.Id)
 	switch barrier.BarrierType {
 	case ExitpointBarrier:
 		o.cancelFunc()
 	}
 }
 
-func (o *OperatorTask[IN1, IN2, OUT]) NotifyBarrierCancel(barrier Barrier) {
-	o.operatorRuntime.NotifyCheckpointCancel(barrier.Id)
+func (o *Task) NotifyBarrierCancel(barrier Barrier) {
+	o.normalOperator.NotifyCheckpointCancel(barrier.Id)
 
 }
 
-func New[IN1, IN2, OUT any](options Options[IN1, IN2, OUT]) *OperatorTask[IN1, IN2, OUT] {
+func New(options Options) *Task {
 	ctx, cancelFunc := _c.WithCancel(_c.Background())
-	return &OperatorTask[IN1, IN2, OUT]{
-		ctx:        ctx,
-		cancelFunc: cancelFunc,
-		logger:     log.Global().Named(options.Name + ".task"),
-		Options:    options,
-		rwMutex:    &sync.RWMutex{},
-		callerChan: make(chan func()),
-		running:    false,
+	return &Task{
+		ctx:            ctx,
+		cancelFunc:     cancelFunc,
+		logger:         log.Global().Named(options.Name + ".task"),
+		Options:        options,
+		running:        false,
+		rwMutex:        &sync.RWMutex{},
+		normalOperator: options.Operator,
+		callerChan:     make(chan func()),
 	}
 }

@@ -6,12 +6,6 @@ import (
 	"github.com/RuiFG/streaming/streaming-core/store"
 )
 
-type CheckpointListener interface {
-	NotifyCheckpointCome(checkpointId int64)
-	NotifyCheckpointComplete(checkpointId int64)
-	NotifyCheckpointCancel(checkpointId int64)
-}
-
 type Context interface {
 	Logger() log.Logger
 	Store() store.Controller
@@ -20,8 +14,31 @@ type Context interface {
 	Call(func())
 }
 
-// Operator is the operator's basic interface.
-type Operator[IN1, IN2, OUT any] interface {
+type CheckpointListener interface {
+	NotifyCheckpointCome(checkpointId int64)
+	NotifyCheckpointComplete(checkpointId int64)
+	NotifyCheckpointCancel(checkpointId int64)
+}
+
+type NormalOperator interface {
+	CheckpointListener
+	Open(ctx Context, emit element.Emit) error
+	Close() error
+	ProcessElement(element element.NormalElement, index int)
+}
+
+type OneInputOperator[IN, OUT any] interface {
+	CheckpointListener
+	Open(ctx Context, collector element.Collector[OUT]) error
+	Close() error
+
+	ProcessEvent(event *element.Event[IN])
+	ProcessWatermark(watermark element.Watermark)
+	ProcessWatermarkStatus(watermarkStatus element.WatermarkStatus)
+}
+
+// TwoInputOperator is the operator's basic interface.
+type TwoInputOperator[IN1, IN2, OUT any] interface {
 	CheckpointListener
 	Open(ctx Context, collector element.Collector[OUT]) error
 	Close() error
@@ -32,8 +49,6 @@ type Operator[IN1, IN2, OUT any] interface {
 	ProcessWatermarkStatus(watermarkStatus element.WatermarkStatus)
 }
 
-type NewOperator[IN1, IN2, OUT any] func() Operator[IN1, IN2, OUT]
-
 type Source[OUT any] interface {
 	CheckpointListener
 	Open(ctx Context, collector element.Collector[OUT]) error
@@ -41,8 +56,6 @@ type Source[OUT any] interface {
 
 	Run()
 }
-
-type NewSource[OUT any] func() Source[OUT]
 
 type Sink[IN any] interface {
 	CheckpointListener
@@ -52,8 +65,6 @@ type Sink[IN any] interface {
 	ProcessEvent(event *element.Event[IN])
 	ProcessWatermark(watermark element.Watermark)
 }
-
-type NewSink[IN any] func() Sink[IN]
 
 type Rich interface {
 	Open(ctx Context) error

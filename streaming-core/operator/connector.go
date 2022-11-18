@@ -11,14 +11,6 @@ type SourceOperatorWrap[OUT any] struct {
 	collector element.Collector[OUT]
 }
 
-func (o *SourceOperatorWrap[OUT]) ProcessEvent1(_ *element.Event[any]) {}
-
-func (o *SourceOperatorWrap[OUT]) ProcessEvent2(_ *element.Event[any]) {}
-
-func (o *SourceOperatorWrap[OUT]) ProcessWatermark(_ element.Watermark) {}
-
-func (o *SourceOperatorWrap[OUT]) ProcessWatermarkStatus(_ element.WatermarkStatus) {}
-
 func (o *SourceOperatorWrap[OUT]) Open(ctx Context, collector element.Collector[OUT]) error {
 	o.collector = collector
 	if err := o.Source.Open(ctx, collector); err != nil {
@@ -37,6 +29,12 @@ func (o *SourceOperatorWrap[OUT]) Open(ctx Context, collector element.Collector[
 }
 
 func (o *SourceOperatorWrap[IN]) Close() error { return o.Source.Close() }
+
+func (o *SourceOperatorWrap[OUT]) ProcessEvent(_ *element.Event[any]) {}
+
+func (o *SourceOperatorWrap[OUT]) ProcessWatermark(_ element.Watermark) {}
+
+func (o *SourceOperatorWrap[OUT]) ProcessWatermarkStatus(_ element.WatermarkStatus) {}
 
 func (o *SourceOperatorWrap[OUT]) NotifyCheckpointCome(checkpointId int64) {
 	o.Source.NotifyCheckpointCome(checkpointId)
@@ -63,11 +61,12 @@ func (s *SinkOperatorWrap[IN]) Open(ctx Context, _ element.Collector[any]) error
 
 func (s *SinkOperatorWrap[IN]) Close() error { return s.Sink.Close() }
 
-func (s *SinkOperatorWrap[IN]) ProcessEvent1(event *element.Event[IN]) { s.Sink.ProcessEvent(event) }
-
-func (s *SinkOperatorWrap[IN]) ProcessEvent2(_ *element.Event[any]) {}
-
-func (s *SinkOperatorWrap[IN]) ProcessWatermark(_ element.Watermark) {}
+func (s *SinkOperatorWrap[IN]) ProcessEvent(event *element.Event[IN]) {
+	s.Sink.ProcessEvent(event)
+}
+func (s *SinkOperatorWrap[IN]) ProcessWatermark(watermark element.Watermark) {
+	s.Sink.ProcessWatermark(watermark)
+}
 
 func (s *SinkOperatorWrap[IN]) ProcessWatermarkStatus(_ element.WatermarkStatus) {}
 

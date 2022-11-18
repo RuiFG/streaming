@@ -34,8 +34,8 @@ func (e *Env) addSourceInit(fn sourceInitFn) {
 
 func (e *Env) Start() error {
 	var (
-		rootTasks    []task.Task
-		nonRootTasks []task.Task
+		rootTasks    []*task.Task
+		nonRootTasks []*task.Task
 	)
 	//init all
 	for _, initFn := range e.sourceInitFns {

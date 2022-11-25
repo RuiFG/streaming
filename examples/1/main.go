@@ -5,68 +5,64 @@ import (
 	mockSink "github.com/RuiFG/streaming/streaming-connector/mock-connector/sink"
 	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-operator/watermark"
+	"github.com/RuiFG/streaming/streaming-operator/window"
 	"github.com/pkg/profile"
 	//kafkaSource "github.com/RuiFG/streaming/streaming-connector/kafka-connector/source"
 	mockSource "github.com/RuiFG/streaming/streaming-connector/mock-connector/source"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/stream"
 	_map "github.com/RuiFG/streaming/streaming-operator/map"
-	"sync/atomic"
 	"time"
 )
 
+type aggregator struct {
+}
+
+func (a *aggregator) Add(acc []string, in string) []string {
+	return append(acc, in)
+
+}
+
+func (a *aggregator) GetResult(acc []string) int {
+	return len(acc)
+}
+
 func main() {
 
-	var counter int64 = 0
 	defer profile.Start().Stop()
 	log.Setup(log.DefaultOptions().WithOutputEncoder(log.ConsoleOutputEncoder).WithLevel(log.DebugLevel))
-	env, _ := stream.New(stream.EnvOptions{})
-	//config := sarama.NewConfig()
-	//config.Version = sarama.V2_4_0_0
-	//config.Consumer.Offsets.AutoCommit.Enable = false
-	//config.Consumer.Offsets.Initial = sarama.OffsetNewest
-	//sourceStream, _ := kafkaSource.FromSource[string](env, kafkaSource.Config{
-	//	SaramaConfig: config,
-	//	Addresses:    []string{"10.104.6.165:9092", "10.104.6.167:9092", "10.104.6.168:9092"},
-	//	Topics:       []string{"cachelog-huge-c"},
-	//	GroupId:      "test-streaming",
-	//}, func(message *sarama.ConsumerMessage) string {
-	//	return *(*string)(unsafe.Pointer(&message.Value))
-	//}, "kafka")
-	sourceStream, _ := mockSource.FormSource(env, func() string {
-		return "123"
-	}, time.Second, 1000000, "mock")
-	apply, _ := _map.Apply[string, string](sourceStream, func(string2 string) string {
-		return string2
-	}, "mm")
-	aaa, _ := watermark.Apply[string](apply,
-		watermark.NewBoundedOutOfOrderlinessWatermarkGeneratorFn[string](0),
-		func(string2 string) int64 {
-			return time.Now().UnixMilli()
-		}, 1*time.Second, "process time")
+	option := stream.DefaultEnvironmentOptions
 
-	if err := mockSink.ToSink[string](aaa,
-		func(in string) {
-			atomic.AddInt64(&counter, 1)
+	env, _ := stream.New(option)
+	sourceStream, _ := mockSource.FormSource(env, "mock", func() string {
+		return "123"
+	}, time.Second, 3000000)
+	apply, _ := _map.Apply[string, string](sourceStream, "mm",
+		_map.WithFn[string, string](func(string2 string) string {
+			return string2
+		}))
+	aaa, _ := watermark.Apply[string](apply,
+		"watermark",
+		watermark.WithBoundedOutOfOrderlinessWatermarkGenerator[string](30*time.Second),
+		watermark.WithTimestampAssigner[string](func(t string) int64 {
+			return time.Now().UnixMilli()
+		}))
+
+	agg, _ := window.Apply[struct{}, string, []string, int, int](aaa, "asd",
+		window.WithNonKeySelector[string, []string, int, int](),
+		window.WithTumblingEventTime[struct{}, string, []string, int, int](60*time.Second, 0),
+		window.WithAggregator[struct{}, string, []string, int](&aggregator{}))
+	if err := mockSink.ToSink[int](agg, "sink",
+		func(in int) {
+			fmt.Println(in)
 		},
 		func(timestamp element.Watermark) {
 			fmt.Printf("current watermark timestamp %d\n", timestamp)
-		}, "sink"); err != nil {
+		}); err != nil {
 		panic(err)
 	}
-	time.Sleep(1 * time.Second)
 	_ = env.Start()
-	//env.RegisterBarrierTrigger(func(channel chan<- task.BarrierType) {
-	//	for true {
-	//		time.Sleep(10 * time.Second)
-	//		channel <- task.CheckpointBarrier
-	//	}
-	//})
-	for i := 0; i < 100; i++ {
-		fmt.Printf("receive %d\n", counter)
-		atomic.AddInt64(&counter, -counter)
-		time.Sleep(1 * time.Second)
-	}
+	time.Sleep(1 * time.Minute)
 
 	_ = env.Stop()
 }

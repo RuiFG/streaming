@@ -11,9 +11,20 @@ type ProcessEventFn[IN any] func(IN)
 type ProcessWatermarkFn func(watermark element.Watermark)
 
 type sink[IN any] struct {
-	CheckpointListener
 	ProcessEventFn[IN]
 	ProcessWatermarkFn
+}
+
+func (s *sink[IN]) NotifyCheckpointCome(checkpointId int64) {
+
+}
+
+func (s *sink[IN]) NotifyCheckpointComplete(checkpointId int64) {
+
+}
+
+func (s *sink[IN]) NotifyCheckpointCancel(checkpointId int64) {
+
 }
 
 func (s *sink[IN]) Open(_ Context) error {
@@ -32,12 +43,12 @@ func (s *sink[IN]) ProcessWatermark(watermark element.Watermark) {
 	s.ProcessWatermarkFn(watermark)
 }
 
-func ToSink[IN any](upstream stream.Stream[IN], processEventFn ProcessEventFn[IN], processWatermarkFn ProcessWatermarkFn, name string, applyFns ...stream.WithSinkStreamOptions[IN]) error {
-	options := stream.ApplyWithSinkStreamOptionsFns(applyFns)
-	options.Name = name
-	options.Sink = &sink[IN]{
-		ProcessEventFn:     processEventFn,
-		ProcessWatermarkFn: processWatermarkFn,
-	}
-	return stream.ToSink[IN](upstream, options)
+func ToSink[IN any](upstream stream.Stream[IN], name string, processEventFn ProcessEventFn[IN], processWatermarkFn ProcessWatermarkFn) error {
+	return stream.ToSink[IN](upstream, stream.SinkStreamOptions[IN]{
+		Name: name,
+		Sink: &sink[IN]{
+			ProcessEventFn:     processEventFn,
+			ProcessWatermarkFn: processWatermarkFn,
+		},
+	})
 }

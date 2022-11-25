@@ -1,12 +1,5 @@
 package task
 
-type BarrierType uint
-
-const (
-	CheckpointBarrier BarrierType = iota
-	ExitpointBarrier
-)
-
 type Message uint
 
 const (
@@ -21,8 +14,7 @@ type Signal struct {
 }
 
 type Barrier struct {
-	Id int64
-	BarrierType
+	CheckpointId int64
 }
 
 type BarrierTrigger interface {
@@ -41,11 +33,11 @@ type dataProcessor interface {
 // BarrierAligner for block an input until all barriers are received
 type BarrierAligner struct {
 	BarrierTrigger
-	processor        dataProcessor
-	inputCount       int
-	currentBarrierId int64
-	blockedIndexes   map[int]struct{}
-	buffer           []internalData
+	processor      dataProcessor
+	inputCount     int
+	currentId      int64
+	blockedIndexes map[int]struct{}
+	buffer         []internalData
 }
 
 func (h *BarrierAligner) Handler(data internalData) {
@@ -66,24 +58,24 @@ func (h *BarrierAligner) Handler(data internalData) {
 func (h *BarrierAligner) processBarrierDetail(barrier Barrier, index int) {
 	//h.logger.Debugf("aligner process barrier %+v", barrierDetail)
 	if h.inputCount == 1 {
-		if barrier.Id > h.currentBarrierId {
-			h.currentBarrierId = barrier.Id
+		if barrier.CheckpointId > h.currentId {
+			h.currentId = barrier.CheckpointId
 			h.BarrierTrigger.TriggerBarrier(barrier)
 		}
 		return
 	}
 	if len(h.blockedIndexes) > 0 {
-		if barrier.Id == h.currentBarrierId {
+		if barrier.CheckpointId == h.currentId {
 			h.onUpstream(index)
-		} else if barrier.Id > h.currentBarrierId {
-			//h.logger.Infof("received checkpoint barrier for checkpoint %d before complete current checkpoint %d. skipping current checkpoint.", b.CheckpointId, h.currentBarrierId)
+		} else if barrier.CheckpointId > h.currentId {
+			//h.logger.Infof("received checkpoint barrier for checkpoint %d before complete current checkpoint %d. skipping current checkpoint.", b.CheckpointId, h.currentId)
 
 			h.releaseBlocksAndResetBarriers()
 			h.beginNewAlignment(barrier, index)
 		} else {
 			return
 		}
-	} else if barrier.Id > h.currentBarrierId {
+	} else if barrier.CheckpointId > h.currentId {
 		//h.logger.Debugf("aligner process new alignment", b)
 		h.beginNewAlignment(barrier, index)
 	} else {
@@ -114,7 +106,7 @@ func (h *BarrierAligner) releaseBlocksAndResetBarriers() {
 }
 
 func (h *BarrierAligner) beginNewAlignment(barrier Barrier, index int) {
-	h.currentBarrierId = barrier.Id
+	h.currentId = barrier.CheckpointId
 	h.onUpstream(index)
 	//h.logger.Debugf("starting stream alignment for checkpoint %d", barrier.CheckpointId)
 }

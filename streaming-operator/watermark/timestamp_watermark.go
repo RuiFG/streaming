@@ -4,9 +4,55 @@ import (
 	"github.com/RuiFG/streaming/streaming-core/element"
 	. "github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/stream"
+	"github.com/pkg/errors"
 	"math"
 	"time"
 )
+
+type options[T any] struct {
+	generatorFn           GeneratorFn[T]
+	timestampAssignerFn   TimestampAssignerFn[T]
+	autoWatermarkInterval time.Duration
+}
+
+type WithOptions[T any] func(options *options[T]) error
+
+func WithBoundedOutOfOrderlinessWatermarkGenerator[T any](outOfOrderlinessMillisecond time.Duration) WithOptions[T] {
+	return func(options *options[T]) error {
+		if outOfOrderlinessMillisecond <= time.Millisecond {
+			return errors.Errorf("outOfOrderlinessMillisecond should be more than milliseconds.")
+		}
+		options.generatorFn = &boundedOutOfOrderlinessWatermarkGeneratorFn[T]{
+			maxTimestamp:                int64(math.MinInt64 + outOfOrderlinessMillisecond/time.Millisecond + 1),
+			outOfOrderlinessMillisecond: int64(outOfOrderlinessMillisecond / time.Millisecond),
+		}
+		return nil
+	}
+}
+
+func WithNoWatermarksGenerator[T any]() WithOptions[T] {
+	return func(options *options[T]) error {
+		options.generatorFn = &noWatermarksGeneratorFn[T]{}
+		return nil
+	}
+}
+
+func WithTimestampAssigner[T any](fn TimestampAssignerFn[T]) WithOptions[T] {
+	return func(options *options[T]) error {
+		options.timestampAssignerFn = fn
+		return nil
+	}
+}
+
+func WithAutoWatermarkInterval[T any](duration time.Duration) WithOptions[T] {
+	return func(options *options[T]) error {
+		if duration <= 0 {
+			return errors.Errorf("duration should be greater than 0")
+		}
+		options.autoWatermarkInterval = duration
+		return nil
+	}
+}
 
 // timestampAndWatermarkOperator will be set event time and advance watermark
 type timestampAndWatermarkOperator[T any] struct {
@@ -20,13 +66,15 @@ type timestampAndWatermarkOperator[T any] struct {
 	watermarkCollector    *collector[T]
 }
 
-func (o *timestampAndWatermarkOperator[T]) Open(ctx Context, elementCollector element.Collector[T]) error {
-	if err := o.BaseOperator.Open(ctx, elementCollector); err != nil {
+func (o *timestampAndWatermarkOperator[T]) Open(ctx Context, elementCollector element.Collector[T]) (err error) {
+	if err = o.BaseOperator.Open(ctx, elementCollector); err != nil {
 		return err
 	}
 	o.elementCollector = elementCollector
 	o.watermarkCollector = &collector[T]{c: elementCollector}
-	o.timerService = GetTimerService[struct{}](ctx, "timer-service", o)
+	if o.timerService, err = GetTimerService[struct{}](ctx, "timer-service", o); err != nil {
+		return errors.WithMessage(err, "failed to open timestampAndWatermarkOperator")
+	}
 	o.timerService.RegisterProcessingTimeTimer(Timer[struct{}]{Timestamp: time.Now().UnixMilli() + int64(o.autoWatermarkInterval/time.Millisecond)})
 	return nil
 }
@@ -53,16 +101,33 @@ func (o *timestampAndWatermarkOperator[T]) ProcessWatermarkTimestamp(watermarkTi
 }
 
 func Apply[T any](upstream stream.Stream[T],
-	generatorFn GeneratorFn[T],
-	timestampAssignerFn TimestampAssignerFn[T],
-	autoWatermarkInterval time.Duration,
-	name string, applyFns ...stream.WithOperatorStreamOptions[T, any, T]) (*stream.OperatorStream[T, any, T], error) {
-	options := stream.ApplyWithOperatorStreamOptionsFns(applyFns)
-	options.Name = name
-	options.Operator = OneInputOperatorToNormal[T, T](&timestampAndWatermarkOperator[T]{
-		watermarkGenerator:    generatorFn,
-		timestampAssigner:     timestampAssignerFn,
-		autoWatermarkInterval: autoWatermarkInterval,
+	name string, withOptionsFns ...WithOptions[T]) (stream.Stream[T], error) {
+	o := &options[T]{
+		generatorFn:           nil,
+		timestampAssignerFn:   nil,
+		autoWatermarkInterval: 60 * time.Second,
+	}
+	for _, withOptionsFn := range withOptionsFns {
+		if err := withOptionsFn(o); err != nil {
+			return nil, err
+		}
+	}
+	if o.generatorFn == nil {
+		return nil, errors.Errorf("generatorFn can't be nil")
+	}
+	if o.timestampAssignerFn == nil {
+		return nil, errors.Errorf("timestampAssignerFn can't be nil")
+	}
+	if o.autoWatermarkInterval <= 0 {
+		return nil, errors.Errorf("autoWatermarkInterval should be greater than 0")
+	}
+
+	return stream.ApplyOneInput[T, T](upstream, stream.OperatorStreamOptions{
+		Name: name,
+		Operator: OneInputOperatorToNormal[T, T](&timestampAndWatermarkOperator[T]{
+			watermarkGenerator:    o.generatorFn,
+			timestampAssigner:     o.timestampAssignerFn,
+			autoWatermarkInterval: o.autoWatermarkInterval,
+		}),
 	})
-	return stream.ApplyOneInput(upstream, options)
 }

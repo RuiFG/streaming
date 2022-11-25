@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package pb;
+option go_package = "./pb";
+message State{
+  int32  type = 1;
+  bytes payload = 2;
+}
+message ControllerState{
+  map<string, State> data = 1;
+}
+
+message ManagerState {
+  map<string, ControllerState> data = 1;
+}

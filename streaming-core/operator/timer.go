@@ -1,9 +1,7 @@
 package operator
 
 import (
-	"bytes"
 	"container/heap"
-	"encoding/gob"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/pkg/errors"
 	"math"
@@ -18,23 +16,24 @@ type TimerTrigger[T comparable] interface {
 
 // Timer is a structure that contains triggering events
 type Timer[T comparable] struct {
-	Content   T
+	Payload   T
 	Timestamp int64
 }
 
-// timerQueue[T] is a priority queue,
+// timerQueue is a priority queue,
 // sorted from smallest to largest according to Timer.Timestamp,
 // and use dedupeMap to prevent the same Timer from being inserted.
 // If timestamps are inserted in this order
 // +---+     +---+     +---+     +---+     +-------------+     +---+
 // | 2 | --> | 5 | --> | 3 | --> | 1 | --> | duplicate:3 | --> | 7 |
 // +---+     +---+     +---+     +---+     +-------------+     +---+
-// items:
+// Items:
 // +---+     +---+     +---+     +---+     +---+
 // | 1 | --> | 2 | --> | 3 | --> | 5 | --> | 7 |
 // +---+     +---+     +---+     +---+     +---+
 type timerQueue[T comparable] struct {
-	items     []Timer[T]
+	//exposing is for serialization
+	Items     []Timer[T]
 	dedupeMap map[Timer[T]]struct{}
 	nil       Timer[T]
 }
@@ -44,31 +43,31 @@ type timerQueue[T comparable] struct {
 //---------------------------------------------------------------------------------
 
 func (t *timerQueue[T]) Less(i, j int) bool {
-	return t.items[i].Timestamp < t.items[j].Timestamp
+	return t.Items[i].Timestamp < t.Items[j].Timestamp
 }
 
 func (t *timerQueue[T]) Swap(i, j int) {
-	t.items[i], t.items[j] = t.items[j], t.items[i]
+	t.Items[i], t.Items[j] = t.Items[j], t.Items[i]
 
 }
 
 func (t *timerQueue[T]) Push(x any) {
 	item := x.(Timer[T])
-	t.items = append(t.items, item)
+	t.Items = append(t.Items, item)
 }
 
 func (t *timerQueue[T]) Pop() any {
-	old := t.items
+	old := t.Items
 	n := len(old)
 	x := old[n-1]
-	t.items = old[0 : n-1]
+	t.Items = old[0 : n-1]
 	return x
 }
 
 //---------------------------------------------------------------------------------
 
 func (t *timerQueue[T]) Len() int {
-	return len(t.items)
+	return len(t.Items)
 }
 
 func (t *timerQueue[T]) PushTimer(item Timer[T]) {
@@ -79,7 +78,7 @@ func (t *timerQueue[T]) PushTimer(item Timer[T]) {
 }
 
 func (t *timerQueue[T]) PopTimer() Timer[T] {
-	if len(t.items) == 0 {
+	if len(t.Items) == 0 {
 		return t.nil
 	} else {
 		item := heap.Pop(t).(Timer[T])
@@ -89,7 +88,7 @@ func (t *timerQueue[T]) PopTimer() Timer[T] {
 }
 
 func (t *timerQueue[T]) PeekTimer() Timer[T] {
-	return t.items[0]
+	return t.Items[0]
 }
 
 func (t *timerQueue[T]) Remove(timer Timer[T]) bool {
@@ -105,7 +104,7 @@ func (t *timerQueue[T]) Remove(timer Timer[T]) bool {
 }
 
 func (t *timerQueue[T]) Index(timer Timer[T]) int {
-	for index, item := range t.items {
+	for index, item := range t.Items {
 		if item == timer {
 			return index
 		}
@@ -227,46 +226,42 @@ func NewTimerManager() *TimerManager {
 	return &TimerManager{services: map[string]WatermarkTimerAdvances{}}
 }
 
-func GetTimerService[T comparable](ctx Context, name string, trigger TimerTrigger[T]) *TimerService[T] {
-	if timerServiceRefer, _, err := store.RegisterOrGet(ctx.Store(), store.StateDescriptor[TimerService[T]]{
-		Key: name,
-		Initializer: func() TimerService[T] {
-			service := TimerService[T]{
-				ctx:                       ctx,
-				trigger:                   trigger,
-				nextTimer:                 nil,
-				CurrentWatermarkTimestamp: 0,
-				ProcessTimeCallbackQueue:  &timerQueue[T]{dedupeMap: map[Timer[T]]struct{}{}},
-				EventTimeCallbackQueue:    &timerQueue[T]{dedupeMap: map[Timer[T]]struct{}{}},
-			}
-			ctx.TimerManager().addWatermarkTimerAdvances(name, &service)
-			(&service).startAdvanceProcessingTimestamp()
-			return service
-		},
-		Serializer: func(service TimerService[T]) []byte {
-			var buffer bytes.Buffer
-			decoder := gob.NewEncoder(&buffer)
-			if err := decoder.Encode(service); err != nil {
-				panic(errors.WithMessage(err, "failed to encode internal timer service to gob bytes"))
-			}
-			return buffer.Bytes()
-		},
-		Deserializer: func(byteSlice []byte) TimerService[T] {
-			var service = TimerService[T]{}
-			if err := gob.NewDecoder(bytes.NewReader(byteSlice)).Decode(&service); err != nil {
-				panic(errors.WithMessage(err, "failed to decode gob bytes"))
-			}
-			service.trigger = trigger
-			service.ctx = ctx
-			service.nextTimer = nil
-			ctx.TimerManager().addWatermarkTimerAdvances(name, &service)
-			(&service).startAdvanceProcessingTimestamp()
-			return service
-		},
+func GetTimerService[T comparable](ctx Context, name string, trigger TimerTrigger[T]) (*TimerService[T], error) {
+
+	if timerServiceStateController, err := store.GobRegisterOrGet(ctx.Store(), name, func() TimerService[T] {
+		service := TimerService[T]{
+			ctx:                       ctx,
+			trigger:                   trigger,
+			nextTimer:                 nil,
+			CurrentWatermarkTimestamp: 0,
+			ProcessTimeCallbackQueue:  &timerQueue[T]{dedupeMap: map[Timer[T]]struct{}{}},
+			EventTimeCallbackQueue:    &timerQueue[T]{dedupeMap: map[Timer[T]]struct{}{}},
+		}
+		ctx.TimerManager().addWatermarkTimerAdvances(name, &service)
+		(&service).startAdvanceProcessingTimestamp()
+		return service
+	}, nil, func(service TimerService[T], err error) (TimerService[T], error) {
+		if err != nil {
+			return service, err
+		}
+		service.trigger = trigger
+		service.ctx = ctx
+		service.nextTimer = nil
+		service.EventTimeCallbackQueue.dedupeMap = map[Timer[T]]struct{}{}
+		for _, item := range service.EventTimeCallbackQueue.Items {
+			service.EventTimeCallbackQueue.dedupeMap[item] = struct{}{}
+		}
+		service.ProcessTimeCallbackQueue.dedupeMap = map[Timer[T]]struct{}{}
+		for _, item := range service.ProcessTimeCallbackQueue.Items {
+			service.ProcessTimeCallbackQueue.dedupeMap[item] = struct{}{}
+		}
+		ctx.TimerManager().addWatermarkTimerAdvances(name, &service)
+		(&service).startAdvanceProcessingTimestamp()
+		return service, nil
 	}); err != nil {
-		panic("failed to init timer service, can't start")
+		return nil, errors.WithMessage(err, "failed to init timer service")
 	} else {
-		return timerServiceRefer
+		return timerServiceStateController.Pointer(), nil
 	}
 
 }

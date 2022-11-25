@@ -1,12 +1,8 @@
 package operator
 
 import (
-	"encoding/binary"
 	"github.com/RuiFG/streaming/streaming-core/element"
-	"github.com/RuiFG/streaming/streaming-core/store"
-	"github.com/pkg/errors"
 	"math"
-	"sync"
 )
 
 type collector[T any] struct {
@@ -27,32 +23,16 @@ func (c *collector[T]) EmitWatermarkStatus(watermarkStatus element.WatermarkStat
 
 type OneInputNormalOperator[IN, OUT any] struct {
 	OneInputOperator[IN, OUT]
-	currentWatermark *element.Watermark
+	currentWatermark element.Watermark
 }
 
-func (o *OneInputNormalOperator[IN, OUT]) Open(ctx Context, emit element.Emit) (err error) {
-	o.currentWatermark, _, err = store.RegisterOrGet(ctx.Store(), store.StateDescriptor[element.Watermark]{
-		Key: "current-watermark",
-		Initializer: func() element.Watermark {
-			return math.MinInt64
-		},
-		Serializer: func(watermark element.Watermark) []byte {
-			var buf = make([]byte, 8)
-			binary.BigEndian.PutUint64(buf, uint64(watermark))
-			return buf
-		},
-		Deserializer: func(buf []byte) element.Watermark {
-			return element.Watermark(binary.BigEndian.Uint64(buf))
-		},
-	})
-	if err != nil {
-		return errors.WithMessage(err, "failed to register current watermark state.")
-	}
-
+func (o *OneInputNormalOperator[IN, OUT]) Open(ctx Context, emit element.Emit) error {
+	o.currentWatermark = math.MinInt64
 	return o.OneInputOperator.Open(ctx, &collector[OUT]{emit})
 }
 
 func (o *OneInputNormalOperator[IN, OUT]) Close() error {
+
 	return o.OneInputOperator.Close()
 }
 
@@ -69,17 +49,11 @@ func (o *OneInputNormalOperator[IN, OUT]) ProcessElement(normalElement element.N
 
 type TwoInputNormalOperator[IN1, IN2, OUT any] struct {
 	TwoInputOperator[IN1, IN2, OUT]
-	combineWatermarkMutex *sync.RWMutex
-	combineWatermark      *CombineWatermark
+	combineWatermark *CombineWatermark
 }
 
 func (o *TwoInputNormalOperator[IN1, IN2, OUT]) Open(ctx Context, emit element.Emit) error {
-	combineWatermark, mutex, err := store.RegisterOrGet(ctx.Store(), NewCombineWatermarkStateDescriptor("combine-watermark", 2))
-	if err != nil {
-		return errors.WithMessage(err, "failed to register combine watermark.")
-	}
-	o.combineWatermark = combineWatermark
-	o.combineWatermarkMutex = mutex
+	o.combineWatermark = NewCombineWatermark(2)
 	return o.TwoInputOperator.Open(ctx, &collector[OUT]{emit})
 }
 

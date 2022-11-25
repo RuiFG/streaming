@@ -5,14 +5,6 @@ import (
 	"github.com/RuiFG/streaming/streaming-core/store"
 )
 
-type QOS uint
-
-const (
-	AtMostOnce QOS = iota
-	AtLeastOnce
-	ExactlyOnce
-)
-
 // Data like element.NormalElement
 type Data any
 
@@ -24,17 +16,13 @@ type internalData struct {
 }
 
 type Options struct {
-	Name               string
-	Operator           operator.NormalOperator
-	QOS                QOS
-	BarrierSignalChan  chan Signal
-	BarrierTriggerChan chan BarrierType
+	Name              string
+	Operator          operator.NormalOperator
+	BarrierSignalChan chan Signal
 
-	//sink EmitNext is nil
-	EmitNext Emit
+	//sink DataEmit is nil
+	DataEmit Emit
 
-	InputCount   int
-	OutputCount  int
-	ChannelSize  int
+	BufferSize   int
 	StoreManager store.Manager
 }

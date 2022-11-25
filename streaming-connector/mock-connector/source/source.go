@@ -3,7 +3,6 @@ package source
 import (
 	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/operator"
-	. "github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/stream"
 	"time"
 )
@@ -11,13 +10,23 @@ import (
 type Fn[T any] func() T
 
 type mockSource[OUT any] struct {
-	CheckpointListener
 	ctx       operator.Context
 	collector element.Collector[OUT]
 	doneChan  chan struct{}
 	interval  time.Duration
 	number    int
 	Fn[OUT]
+}
+
+func (s *mockSource[OUT]) NotifyCheckpointCome(checkpointId int64) {
+
+}
+
+func (s *mockSource[OUT]) NotifyCheckpointComplete(checkpointId int64) {
+
+}
+
+func (s *mockSource[OUT]) NotifyCheckpointCancel(checkpointId int64) {
 }
 
 func (s *mockSource[OUT]) Open(ctx operator.Context, collector element.Collector[OUT]) error {
@@ -50,11 +59,14 @@ func (s *mockSource[OUT]) Close() error {
 	return nil
 }
 
-func FormSource[OUT any](env *stream.Env, GeneratorFn Fn[OUT], interval time.Duration, number int, name string, applyFns ...stream.WithSourceStreamOptions[OUT]) (*stream.SourceStream[OUT], error) {
-	options := stream.ApplyWithSourceStreamOptionsFns(applyFns)
-	options.Name = name
-	options.Source = &mockSource[OUT]{
-		Fn: GeneratorFn, interval: interval, number: number}
-	return stream.FormSource(env, options)
+func FormSource[OUT any](env *stream.Environment, name string, fn Fn[OUT], interval time.Duration, number int) (stream.Stream[OUT], error) {
+	return stream.FormSource(env, stream.SourceStreamOptions[OUT]{
+		Name: name,
+		Source: &mockSource[OUT]{
+			interval: interval,
+			number:   number,
+			Fn:       fn,
+		},
+	})
 
 }

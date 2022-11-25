@@ -21,9 +21,6 @@ func (l *logger) Named(name string) Logger {
 }
 
 func Global() Logger {
-	if rootLogger == nil {
-		Setup(DefaultOptions())
-	}
 	return rootLogger
 }
 
@@ -31,7 +28,7 @@ func Setup(options *Options) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	if rootLogger != nil {
-		rootLogger.Warn("can't reSetup root logger")
+		rootLogger.Warn("can't re setup root logger")
 		return
 	}
 	var (

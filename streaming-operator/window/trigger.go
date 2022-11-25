@@ -6,8 +6,8 @@ import (
 )
 
 type Window struct {
-	startTimestamp int64
-	endTimestamp   int64
+	StartTimestamp int64
+	EndTimestamp   int64
 }
 
 func getWindowStartWithOffset(timestamp int64, offset int64, windowSize int64) int64 {
@@ -22,11 +22,11 @@ func getWindowStartWithOffset(timestamp int64, offset int64, windowSize int64) i
 }
 
 func (w Window) Key() string {
-	return fmt.Sprintf("%d%d", w.startTimestamp, w.endTimestamp)
+	return fmt.Sprintf("%d%d", w.StartTimestamp, w.EndTimestamp)
 }
 
 func (w Window) MaxTimestamp() int64 {
-	return w.endTimestamp - 1
+	return w.EndTimestamp - 1
 }
 
 type TriggerResult int
@@ -53,13 +53,13 @@ type EventTimeTrigger[KEY comparable, T any] struct {
 
 func (e *EventTimeTrigger[KEY, T]) OnElement(ctx WContext[KEY], window Window, key KEY, _ T) TriggerResult {
 	if window.MaxTimestamp() <= ctx.CurrentEventTimestamp() {
-		// if the watermark is already past the window fire immediately
+		// if the watermark is already past the Window fire immediately
 		return Fire
 	} else {
 		ctx.RegisterEventTimeTimer(Timer[KeyAndWindow[KEY]]{
-			Content: KeyAndWindow[KEY]{
-				window: window,
-				key:    key,
+			Payload: KeyAndWindow[KEY]{
+				Window: window,
+				Key:    key,
 			},
 			Timestamp: window.MaxTimestamp(),
 		})
@@ -68,7 +68,7 @@ func (e *EventTimeTrigger[KEY, T]) OnElement(ctx WContext[KEY], window Window, k
 }
 
 func (e *EventTimeTrigger[KEY, T]) OnEventTimer(timer Timer[KeyAndWindow[KEY]]) TriggerResult {
-	if timer.Timestamp == timer.Content.window.MaxTimestamp() {
+	if timer.Timestamp == timer.Payload.Window.MaxTimestamp() {
 		return Fire
 	} else {
 		return Continue
@@ -81,10 +81,6 @@ func (e *EventTimeTrigger[KEY, T]) OnProcessingTimer(_ Timer[KeyAndWindow[KEY]])
 
 func (e *EventTimeTrigger[KEY, T]) Clear(wContext WContext[KEY], timer Timer[KeyAndWindow[KEY]]) {
 	wContext.DeleteEventTimeTimer(timer)
-}
-
-func NewEventTimeTrigger[KEY comparable, T any]() TriggerFn[KEY, T] {
-	return &EventTimeTrigger[KEY, T]{}
 }
 
 type ProcessingTimeTrigger[KEY comparable, T any] struct {

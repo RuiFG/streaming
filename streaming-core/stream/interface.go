@@ -9,20 +9,14 @@ var (
 	ErrMultipleEnv = errors.New("cannot add streams from multiple environments")
 )
 
-type Options struct {
-	Name        string
-	ChannelSize int
-}
-
 type Stream[T any] interface {
-	Env() *Env
+	Env() *Environment
 	//Name returns the name of the task to be created.
 	Name() string
 	addDownstream(name string, downstreamInitFn downstreamInitFn)
 	addUpstream(name string)
 }
 
-// downstreamInitFn is
 type downstreamInitFn func() (task.Emit, []*task.Task, error)
 
 type sourceInitFn func() (*task.Task, []*task.Task, error)

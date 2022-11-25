@@ -2,50 +2,62 @@ package task
 
 import (
 	_c "context"
-	"github.com/RuiFG/streaming/streaming-core/common/safe"
 	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/operator"
+	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/pkg/errors"
 	"sync"
 )
 
 type Task struct {
-	ctx        _c.Context
-	cancelFunc _c.CancelFunc
-	logger     log.Logger
-	Options
-
-	running bool
-	rwMutex *sync.RWMutex
-
-	inputChan chan internalData
-
-	normalOperator operator.NormalOperator
+	name           string
+	ctx            _c.Context
+	cancelFunc     _c.CancelFunc
+	logger         log.Logger
+	storeManager   store.Manager
 	callerChan     chan func()
+	normalOperator operator.NormalOperator
+	running        bool
+	rwMutex        *sync.RWMutex
 
-	barrierAligner *BarrierAligner
+	inputChan  chan internalData
+	inputCount int
+
+	barrierAligner    *BarrierAligner
+	barrierSignalChan chan<- Signal
 
 	elementEmit element.Emit
+	dataEmit    Emit
 }
 
 func (o *Task) Name() string {
-	return o.Options.Name
+	return o.name
+}
+
+// InitEmit will be called multiple times before Daemon run
+func (o *Task) InitEmit(index int) Emit {
+	if o.running {
+		panic("the task is already running. It is forbidden to call")
+	}
+	o.inputCount += 1
+	return func(eob Data) {
+		o.inputChan <- internalData{
+			index: index,
+			eob:   eob,
+		}
+	}
 }
 
 func (o *Task) Daemon() error {
 	o.logger.Info("staring...")
-
-	o.inputChan = make(chan internalData, o.ChannelSize)
 	o.elementEmit = o.Emit
-	o.barrierAligner = NewBarrierAligner(o, o, o.Options.InputCount)
+	o.barrierAligner = NewBarrierAligner(o, o, o.inputCount)
 
-	if err := safe.Run(func() error {
-		return o.normalOperator.Open(operator.NewContext(o.logger.Named("operator"),
-			o.StoreManager.Controller(o.Name()),
-			o.callerChan, operator.NewTimerManager()),
-			o.elementEmit)
-	}); err != nil {
+	if err := o.normalOperator.Open(operator.NewContext(o.logger.Named(".operator"),
+		o.storeManager.Controller(o.Name()),
+		o.callerChan, operator.NewTimerManager()),
+		o.elementEmit); err != nil {
 		return errors.WithMessage(err, "failed to start task")
 	}
 	o.running = true
@@ -73,23 +85,18 @@ func (o *Task) Running() bool {
 	return o.running
 }
 
+func (o *Task) Close() {
+	o.cancelFunc()
+}
+
 func (o *Task) Emit(element element.NormalElement) {
-	o.EmitNext(element)
+	o.dataEmit(element)
 }
 
 func (o *Task) MutexEmit(e element.NormalElement) {
 	o.rwMutex.RLock()
 	o.Emit(e)
 	o.rwMutex.RUnlock()
-}
-
-func (o *Task) InitEmit(index int) Emit {
-	return func(eob Data) {
-		o.inputChan <- internalData{
-			index: index,
-			eob:   eob,
-		}
-	}
 }
 
 // -------------------------------------Processor---------------------------------------------
@@ -108,46 +115,48 @@ func (o *Task) TriggerBarrier(barrier Barrier) {
 	o.rwMutex.Unlock()
 	o.elementEmit = o.Emit
 	message := ACK
-	if err := o.StoreManager.Save(barrier.Id); err != nil {
+	if err := o.storeManager.Save(barrier.CheckpointId); err != nil {
+		o.logger.Warnw("trigger barrier unable to complete", "err", err, "task", o.name)
 		message = DEC
 	}
-	o.BarrierSignalChan <- Signal{
+	o.barrierSignalChan <- Signal{
 		Name:    o.Name(),
 		Message: message,
 		Barrier: barrier,
 	}
-
 }
 
 // -------------------------------------BarrierListener-------------------------------------
 
 func (o *Task) NotifyBarrierCome(barrier Barrier) {
-	o.normalOperator.NotifyCheckpointCome(barrier.Id)
+	o.normalOperator.NotifyCheckpointCome(barrier.CheckpointId)
 }
 
 func (o *Task) NotifyBarrierComplete(barrier Barrier) {
-	o.normalOperator.NotifyCheckpointComplete(barrier.Id)
-	switch barrier.BarrierType {
-	case ExitpointBarrier:
-		o.cancelFunc()
-	}
+	o.normalOperator.NotifyCheckpointComplete(barrier.CheckpointId)
 }
 
 func (o *Task) NotifyBarrierCancel(barrier Barrier) {
-	o.normalOperator.NotifyCheckpointCancel(barrier.Id)
+	o.normalOperator.NotifyCheckpointCancel(barrier.CheckpointId)
 
 }
 
 func New(options Options) *Task {
 	ctx, cancelFunc := _c.WithCancel(_c.Background())
 	return &Task{
-		ctx:            ctx,
-		cancelFunc:     cancelFunc,
-		logger:         log.Global().Named(options.Name + ".task"),
-		Options:        options,
-		running:        false,
-		rwMutex:        &sync.RWMutex{},
-		normalOperator: options.Operator,
-		callerChan:     make(chan func()),
+		name:              options.Name,
+		ctx:               ctx,
+		cancelFunc:        cancelFunc,
+		logger:            log.Global().Named(options.Name + ".task"),
+		running:           false,
+		rwMutex:           &sync.RWMutex{},
+		inputChan:         make(chan internalData, options.BufferSize),
+		inputCount:        0,
+		normalOperator:    options.Operator,
+		callerChan:        make(chan func(), options.BufferSize),
+		dataEmit:          options.DataEmit,
+		storeManager:      options.StoreManager,
+		barrierSignalChan: options.BarrierSignalChan,
 	}
+
 }

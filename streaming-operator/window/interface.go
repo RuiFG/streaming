@@ -6,11 +6,11 @@ import (
 )
 
 type KeyAndWindow[KEY comparable] struct {
-	key    KEY
-	window Window
+	Key    KEY
+	Window Window
 }
 
-// SelectorFn will select the key from the event
+// SelectorFn will select the Key from the event
 type SelectorFn[KEY comparable, IN any] func(IN) KEY
 
 type WContext[KEY comparable] interface {

@@ -2,12 +2,9 @@ package source
 
 import (
 	"fmt"
-	"github.com/RuiFG/streaming/streaming-core/component"
-	. "github.com/RuiFG/streaming/streaming-core/component/source"
 	"github.com/RuiFG/streaming/streaming-core/element"
-	"github.com/RuiFG/streaming/streaming-core/store"
+	. "github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/stream"
-	"github.com/RuiFG/streaming/streaming-core/task"
 	"github.com/Shopify/sarama"
 	"sync"
 )
@@ -27,11 +24,11 @@ type Config struct {
 type FormatFn[OUT any] func(message *sarama.ConsumerMessage) OUT
 
 type source[OUT any] struct {
-	Default[OUT]
+	BaseOperator[any, any, OUT]
 	FormatFn[OUT]
 	config        Config
 	consumerGroup sarama.ConsumerGroup
-	state         store.ValueState[map[topicAndPartition]int64]
+	state         *map[topicAndPartition]int64
 
 	offsetMap       *sync.Map
 	offsetsToCommit map[int64]map[topicAndPartition]int64
@@ -39,8 +36,8 @@ type source[OUT any] struct {
 	commitChan      chan map[topicAndPartition]int64
 }
 
-func (s *source[OUT]) Open(ctx component.Context, collector element.Collector[OUT]) (err error) {
-	if err = s.Default.Open(ctx, collector); err != nil {
+func (s *source[OUT]) Open(ctx Context, collector element.Collector[OUT]) (err error) {
+	if err = s.BaseOperator.Open(ctx, collector); err != nil {
 		return err
 	}
 	s.consumerGroup, err = sarama.NewConsumerGroup(s.config.Addresses, s.config.GroupId, s.config.SaramaConfig)
@@ -117,7 +114,11 @@ func (s *source[OUT]) ConsumeClaim(session sarama.ConsumerGroupSession, claim sa
 	for {
 		select {
 		case message := <-claim.Messages():
-			s.Collector.EmitValue(s.FormatFn(message))
+			s.Collector.EmitEvent(&element.Event[OUT]{
+				Value:        s.FormatFn(message),
+				Timestamp:    0,
+				HasTimestamp: false,
+			})
 			s.offsetMap.Store(topicAndPartition{Topic: message.Topic, Partition: message.Partition}, message.Offset)
 		case <-s.doneChan:
 			return nil
@@ -131,10 +132,10 @@ func (s *source[OUT]) ConsumeClaim(session sarama.ConsumerGroupSession, claim sa
 
 }
 
-func FromSource[OUT any](env *stream.Env, config Config, formatFn FormatFn[OUT], nameSuffix string) (*stream.SourceStream[OUT], error) {
-	return stream.FormSource(env, task.SourceOptions[OUT]{
-		Options: task.Options{NameSuffix: nameSuffix},
-		New: func() component.Source[OUT] {
+func FromSource[OUT any](env *stream.Environment, config Config, formatFn FormatFn[OUT], name string) (*stream.SourceStream[OUT], error) {
+	stream.FormSource(env, stream.SourceStreamOptions[OUT]{
+		Options: stream.Options{Name: name},
+		New: func() Source[OUT] {
 			return &source[OUT]{
 				FormatFn:        formatFn,
 				config:          config,
@@ -144,6 +145,7 @@ func FromSource[OUT any](env *stream.Env, config Config, formatFn FormatFn[OUT],
 				commitChan:      make(chan map[topicAndPartition]int64),
 			}
 		},
+		ElementListeners: nil,
 	})
 
 }

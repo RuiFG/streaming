@@ -1,5 +1,7 @@
 package store
 
+import "sync"
+
 type StateType int
 
 const (
@@ -10,13 +12,19 @@ const (
 type mirrorState struct {
 	Type StateType
 	//content must be Serializable
-	Content any
+	Payload []byte
 }
 
-func (m mirrorState) mirror() mirrorState { return m }
+func (m mirrorState) mirror() (mirrorState, error) { return m, nil }
 
 type State interface {
-	mirror() mirrorState
+	mirror() (mirrorState, error)
+}
+
+type StateController[T any] interface {
+	Pointer() *T
+	Locker() *sync.RWMutex
+	Clear()
 }
 
 type StateHandler[T any] interface {
@@ -40,6 +48,5 @@ type Backend interface {
 	Save(id int64, name string, state []byte) error
 	Persist(checkpointId int64) error //Save the whole checkpoint state into storage
 	Get(name string) ([]byte, error)
-	Clean() error
 	Close() error
 }

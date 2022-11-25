@@ -20,7 +20,8 @@ type operator[KEY comparable, IN, ACC, WIN, OUT any] struct {
 	ProcessWindowFn[KEY, WIN, OUT]
 	AggregatorFn[IN, ACC, WIN]
 	AllowedLateness int64
-	timerService    *TimerService[KeyAndWindow[KEY]]
+
+	timerService *TimerService[KeyAndWindow[KEY]]
 
 	windowCtx  WContext[KEY]
 	state      *map[Window]map[KEY]ACC
@@ -28,24 +29,21 @@ type operator[KEY comparable, IN, ACC, WIN, OUT any] struct {
 	nilACC     ACC
 }
 
-func (a *operator[KEY, IN, ACC, WIN, OUT]) Open(ctx Context, collector element.Collector[OUT]) error {
-	if err := a.BaseOperator.Open(ctx, collector); err != nil {
+func (a *operator[KEY, IN, ACC, WIN, OUT]) Open(ctx Context, collector element.Collector[OUT]) (err error) {
+	if err = a.BaseOperator.Open(ctx, collector); err != nil {
 		return err
 	}
-	if state, stateMutex, err := store.RegisterOrGet[map[Window]map[KEY]ACC](ctx.Store(), store.StateDescriptor[map[Window]map[KEY]ACC]{
-		Key: "window-aggregate-key-state",
-		Initializer: func() map[Window]map[KEY]ACC {
+	if stateController, err := store.GobRegisterOrGet[map[Window]map[KEY]ACC](ctx.Store(), "window-aggregate-Key-state",
+		func() map[Window]map[KEY]ACC {
 			return map[Window]map[KEY]ACC{}
-		},
-		Serializer:   nil,
-		Deserializer: nil,
-	}); err != nil {
+		}, nil, nil); err != nil {
 		return errors.WithMessage(err, "failed to init window state")
 	} else {
-		a.state = state
-		a.stateMutex = stateMutex
+		a.state = stateController.Pointer()
 	}
-	a.timerService = GetTimerService[KeyAndWindow[KEY]](ctx, "window-timer", a)
+	if a.timerService, err = GetTimerService[KeyAndWindow[KEY]](ctx, "Window-timer", a); err != nil {
+		return errors.WithMessagef(err, "failed to get operator timer service")
+	}
 	a.windowCtx = &context[KEY]{
 		Controller:   a.Ctx.Store(),
 		TimerService: a.timerService,
@@ -99,51 +97,51 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) ProcessEvent(e *element.Event[IN]) {
 func (a *operator[KEY, IN, ACC, WIN, OUT]) OnProcessingTime(timer Timer[KeyAndWindow[KEY]]) {
 	triggerResult := a.TriggerFn.OnProcessingTimer(timer)
 	if triggerResult.IsFire() {
-		win := (*a.state)[timer.Content.window][timer.Content.key]
-		outputs := a.ProcessWindowFn.Process(timer.Content.window, timer.Content.key, a.AggregatorFn.GetResult(win))
+		win := (*a.state)[timer.Payload.Window][timer.Payload.Key]
+		outputs := a.ProcessWindowFn.Process(timer.Payload.Window, timer.Payload.Key, a.AggregatorFn.GetResult(win))
 		for _, out := range outputs {
 			a.Collector.EmitEvent(&element.Event[OUT]{
 				Value:        out,
-				Timestamp:    timer.Content.window.MaxTimestamp(),
+				Timestamp:    timer.Payload.Window.MaxTimestamp(),
 				HasTimestamp: true,
 			})
 		}
 
 	}
 	if triggerResult.IsPurge() {
-		delete((*a.state)[timer.Content.window], timer.Content.key)
+		delete((*a.state)[timer.Payload.Window], timer.Payload.Key)
 	}
-	if !a.AssignerFn.IsEventTime() && a.isCleanupTime(timer.Content.window, timer.Timestamp) {
-		delete((*a.state)[timer.Content.window], timer.Content.key)
-		if len((*a.state)[timer.Content.window]) == 0 {
-			delete(*a.state, timer.Content.window)
+	if !a.AssignerFn.IsEventTime() && a.isCleanupTime(timer.Payload.Window, timer.Timestamp) {
+		delete((*a.state)[timer.Payload.Window], timer.Payload.Key)
+		if len((*a.state)[timer.Payload.Window]) == 0 {
+			delete(*a.state, timer.Payload.Window)
 		}
 		a.TriggerFn.Clear(a.windowCtx, timer)
-		a.ProcessWindowFn.Clear(timer.Content.window, timer.Content.key)
+		a.ProcessWindowFn.Clear(timer.Payload.Window, timer.Payload.Key)
 	}
 }
 
 func (a *operator[KEY, IN, ACC, WIN, OUT]) OnEventTime(timer Timer[KeyAndWindow[KEY]]) {
 	triggerResult := a.TriggerFn.OnEventTimer(timer)
 	if triggerResult.IsFire() {
-		win := (*a.state)[timer.Content.window][timer.Content.key]
-		outputs := a.ProcessWindowFn.Process(timer.Content.window, timer.Content.key, a.AggregatorFn.GetResult(win))
+		win := (*a.state)[timer.Payload.Window][timer.Payload.Key]
+		outputs := a.ProcessWindowFn.Process(timer.Payload.Window, timer.Payload.Key, a.AggregatorFn.GetResult(win))
 		for _, out := range outputs {
 			a.Collector.EmitEvent(&element.Event[OUT]{
 				Value:        out,
-				Timestamp:    timer.Content.window.MaxTimestamp(),
+				Timestamp:    timer.Payload.Window.MaxTimestamp(),
 				HasTimestamp: true,
 			})
 		}
 
 	}
 	if triggerResult.IsPurge() {
-		delete((*a.state)[timer.Content.window], timer.Content.key)
+		delete((*a.state)[timer.Payload.Window], timer.Payload.Key)
 	}
-	if a.AssignerFn.IsEventTime() && a.isCleanupTime(timer.Content.window, timer.Timestamp) {
-		delete(*a.state, timer.Content.window)
+	if a.AssignerFn.IsEventTime() && a.isCleanupTime(timer.Payload.Window, timer.Timestamp) {
+		delete(*a.state, timer.Payload.Window)
 		a.TriggerFn.Clear(a.windowCtx, timer)
-		a.ProcessWindowFn.Clear(timer.Content.window, timer.Content.key)
+		a.ProcessWindowFn.Clear(timer.Payload.Window, timer.Payload.Key)
 	}
 
 }
@@ -154,9 +152,9 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) registerCleanupTimer(window Window, k
 		return
 	}
 	timer := Timer[KeyAndWindow[KEY]]{
-		Content: KeyAndWindow[KEY]{
-			window: window,
-			key:    key,
+		Payload: KeyAndWindow[KEY]{
+			Window: window,
+			Key:    key,
 		},
 		Timestamp: cleanupTime,
 	}
@@ -181,8 +179,8 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) isCleanupTime(window Window, timestam
 	return timestamp == a.cleanupTime(window)
 }
 
-// cleanupTime returns the cleanup time for a window,
-// which is window.maxTimestamp + allowedLateness.
+// cleanupTime returns the cleanup time for a Window,
+// which is Window.maxTimestamp + allowedLateness.
 // In case this leads to a value greater than math.MaxInt64 then a cleanup time of math.MaxInt64 is returned.
 func (a *operator[KEY, IN, ACC, WIN, OUT]) cleanupTime(window Window) int64 {
 	if a.AssignerFn.IsEventTime() {
@@ -197,23 +195,23 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) cleanupTime(window Window) int64 {
 	}
 }
 
-func Aggregate[KEY comparable, IN, OUT any](upstream stream.Stream[IN],
-	selector SelectorFn[KEY, IN],
-	trigger TriggerFn[KEY, IN],
-	assigner AssignerFn[KEY, IN],
-	aggregator AggregatorFn[IN, OUT, OUT],
-	allowedLateness int64,
-	name string, applyFns ...stream.WithOperatorStreamOptions[IN, any, OUT]) (*stream.OperatorStream[IN, any, OUT], error) {
-	options := stream.ApplyWithOperatorStreamOptionsFns(applyFns)
-	options.Name = name
-	options.Operator = OneInputOperatorToNormal[IN, OUT](&operator[KEY, IN, OUT, OUT, OUT]{
-		BaseOperator:    BaseOperator[IN, any, OUT]{},
-		SelectorFn:      selector,
-		TriggerFn:       trigger,
-		AssignerFn:      assigner,
-		AggregatorFn:    aggregator,
-		AllowedLateness: allowedLateness,
-		ProcessWindowFn: &PassThroughProcessWindowFn[KEY, OUT]{},
+func Apply[KEY comparable, IN, ACC, WIN, OUT any](upstream stream.Stream[IN], name string, withOptionsFns ...WithOptions[KEY, IN, ACC, WIN, OUT]) (stream.Stream[OUT], error) {
+	o := &options[KEY, IN, ACC, WIN, OUT]{}
+	for _, withOptionsFn := range withOptionsFns {
+		if err := withOptionsFn(o); err != nil {
+			return nil, errors.WithMessagef(err, "%s illegal parameter", name)
+		}
+	}
+	return stream.ApplyOneInput[IN, OUT](upstream, stream.OperatorStreamOptions{
+		Name: name,
+		Operator: OneInputOperatorToNormal[IN, OUT](&operator[KEY, IN, ACC, WIN, OUT]{
+			BaseOperator:    BaseOperator[IN, any, OUT]{},
+			SelectorFn:      o.selectorFn,
+			TriggerFn:       o.triggerFn,
+			AssignerFn:      o.assignerFn,
+			AggregatorFn:    o.aggregatorFn,
+			AllowedLateness: o.allowedLateness,
+			ProcessWindowFn: o.processWindowFn,
+		}),
 	})
-	return stream.ApplyOneInput[IN, OUT](upstream, options)
 }

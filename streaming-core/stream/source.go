@@ -1,46 +1,33 @@
 package stream
 
 import (
-	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/task"
 	"sync"
 )
 
 type SourceStreamOptions[OUT any] struct {
-	Options
-	Source           operator.Source[OUT]
-	ElementListeners []element.Listener[any, any, OUT]
-}
-
-type WithSourceStreamOptions[OUT any] func(options SourceStreamOptions[OUT]) SourceStreamOptions[OUT]
-
-func ApplyWithSourceStreamOptionsFns[OUT any](applyFns []WithSourceStreamOptions[OUT]) SourceStreamOptions[OUT] {
-	options := SourceStreamOptions[OUT]{Options: Options{ChannelSize: 1024}}
-	for _, fn := range applyFns {
-		options = fn(options)
-	}
-	return options
+	Name   string
+	Source operator.Source[OUT]
 }
 
 type SourceStream[OUT any] struct {
-	OperatorStream[any, any, OUT]
+	OperatorStream
 }
 
 func (s *SourceStream[T]) Init() (*task.Task, []*task.Task, error) {
 	s.init()
-	return s.task, s.downstreamTask, nil
+	return s.task, s.chainTask, nil
 }
 
-func FormSource[OUT any](env *Env, sourceOptions SourceStreamOptions[OUT]) (*SourceStream[OUT], error) {
+func FormSource[OUT any](env *Environment, sourceOptions SourceStreamOptions[OUT]) (Stream[OUT], error) {
 	sourceStream := &SourceStream[OUT]{
-		OperatorStream[any, any, OUT]{
-			options: OperatorStreamOptions[any, any, OUT]{
-				Options: sourceOptions.Options,
+		OperatorStream{
+			options: OperatorStreamOptions{
+				Name: sourceOptions.Name,
 				Operator: operator.OneInputOperatorToNormal[any, OUT](&operator.SourceOperatorWrap[OUT]{
 					Source: sourceOptions.Source,
 				}),
-				ElementListeners: sourceOptions.ElementListeners,
 			},
 			env:                 env,
 			downstreamInitFnMap: map[string]downstreamInitFn{},

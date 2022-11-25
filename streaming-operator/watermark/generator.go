@@ -18,25 +18,11 @@ func (b *boundedOutOfOrderlinessWatermarkGeneratorFn[T]) OnPeriodicEmit(watermar
 	watermarkCollector.EmitWatermarkTimestamp(b.maxTimestamp - b.outOfOrderlinessMillisecond - 1)
 }
 
-func NewBoundedOutOfOrderlinessWatermarkGeneratorFn[T any](outOfOrderlinessMillisecond int64) GeneratorFn[T] {
-	if outOfOrderlinessMillisecond < 0 {
-		panic("outOfOrderlinessMillisecond is negative")
-	}
-	return &boundedOutOfOrderlinessWatermarkGeneratorFn[T]{
-		maxTimestamp:                math.MinInt64 + outOfOrderlinessMillisecond + 1,
-		outOfOrderlinessMillisecond: outOfOrderlinessMillisecond,
-	}
-}
-
 type noWatermarksGeneratorFn[T any] struct{}
 
 func (n noWatermarksGeneratorFn[T]) OnEvent(_ T, _ int64, _ Collector) {}
 
 func (n noWatermarksGeneratorFn[T]) OnPeriodicEmit(_ Collector) {}
-
-func NewNoWatermarksGeneratorFn[T any]() GeneratorFn[T] {
-	return noWatermarksGeneratorFn[T]{}
-}
 
 type IdlenessTimer struct {
 	counter                int64

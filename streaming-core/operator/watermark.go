@@ -1,11 +1,7 @@
 package operator
 
 import (
-	"bytes"
-	"encoding/gob"
 	"github.com/RuiFG/streaming/streaming-core/element"
-	"github.com/RuiFG/streaming/streaming-core/store"
-	"github.com/pkg/errors"
 	"math"
 )
 
@@ -75,43 +71,15 @@ func (c *CombineWatermark) UpdateIdle(idle bool, input int) bool {
 	return c.UpdateCombinedWatermark()
 }
 
-func NewCombineWatermark(inputs int) CombineWatermark {
+func NewCombineWatermark(inputs int) *CombineWatermark {
 	var partialWatermarks []*PartialWatermark
 	for p := 0; p < inputs; p++ {
 		partialWatermarks = append(partialWatermarks, &PartialWatermark{true, math.MaxInt64})
 	}
-	return CombineWatermark{
+	return &CombineWatermark{
 		Idle:              true,
 		CombinedWatermark: math.MinInt64,
 		PartialWatermarks: partialWatermarks,
 	}
 
-}
-
-func NewCombineWatermarkStateDescriptor(key string, count int) store.StateDescriptor[CombineWatermark] {
-	return store.StateDescriptor[CombineWatermark]{
-		Key: key,
-		Initializer: func() CombineWatermark {
-			return NewCombineWatermark(count)
-		},
-		Serializer: func(watermark CombineWatermark) []byte {
-			var buffer bytes.Buffer
-			decoder := gob.NewEncoder(&buffer)
-			if err := decoder.Encode(watermark); err != nil {
-				panic(errors.WithMessage(err, "failed to encode combine watermark service to gob bytes"))
-			}
-			return buffer.Bytes()
-		},
-		Deserializer: func(byteSlice []byte) CombineWatermark {
-			var combineWatermark = CombineWatermark{}
-			if err := gob.NewDecoder(bytes.NewReader(byteSlice)).Decode(&combineWatermark); err != nil {
-				panic(errors.WithMessage(err, "failed to decode gob bytes"))
-			}
-			return combineWatermark
-		},
-	}
-}
-
-func init() {
-	gob.Register(CombineWatermark{})
 }

@@ -36,6 +36,7 @@ func RegisterOrGet[T any](controller Controller, descriptor StateDescriptor[T]) 
 					return nil, errors.WithMessage(err, "failed to deserialize state")
 				} else {
 					*vs.pointer = t
+					controller.Store(descriptor.Key, vs)
 				}
 				return vs, nil
 			} else {

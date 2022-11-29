@@ -80,7 +80,10 @@ func (e *Environment) Start() error {
 		}
 	}
 
-	//2. verify that dag is compliant
+	//2. start coordinator
+	e.coordinator = task.NewCoordinator(rootTasks, e.allChainTasks, e.storeBackend, e.barrierSignalChan,
+		e.options.MaxConcurrentCheckpoints, e.options.MinPauseBetweenCheckpoints, e.options.CheckpointTimeout, e.options.TolerableCheckpointFailureNumber)
+	e.coordinator.Activate()
 
 	//3. start all chain task
 	for _, _task := range e.allChainTasks {
@@ -99,11 +102,7 @@ func (e *Environment) Start() error {
 			}
 		}
 	}
-	//5. start coordinator
-	e.coordinator = task.NewCoordinator(rootTasks, e.allChainTasks, e.storeBackend, e.barrierSignalChan,
-		e.options.MaxConcurrentCheckpoints, e.options.MinPauseBetweenCheckpoints, e.options.CheckpointTimeout, e.options.TolerableCheckpointFailureNumber)
-	e.coordinator.Activate()
-
+	//5. start periodic checkpoint if enable
 	if e.options.EnablePeriodicCheckpoint > 0 {
 		e.startPeriodicCheckpoint()
 	}

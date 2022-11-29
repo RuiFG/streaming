@@ -61,6 +61,7 @@ func (o *Task) Daemon() error {
 		return errors.WithMessage(err, "failed to start task")
 	}
 	o.running = true
+	//TODO: use priority mailbox and discard rwMutex
 	for {
 		select {
 		case <-o.ctx.Done():
@@ -130,15 +131,19 @@ func (o *Task) TriggerBarrier(barrier Barrier) {
 
 func (o *Task) NotifyBarrierCome(barrier Barrier) {
 	o.normalOperator.NotifyCheckpointCome(barrier.CheckpointId)
+
 }
 
 func (o *Task) NotifyBarrierComplete(barrier Barrier) {
-	o.normalOperator.NotifyCheckpointComplete(barrier.CheckpointId)
+	o.callerChan <- func() {
+		o.normalOperator.NotifyCheckpointComplete(barrier.CheckpointId)
+	}
 }
 
 func (o *Task) NotifyBarrierCancel(barrier Barrier) {
-	o.normalOperator.NotifyCheckpointCancel(barrier.CheckpointId)
-
+	o.callerChan <- func() {
+		o.normalOperator.NotifyCheckpointCancel(barrier.CheckpointId)
+	}
 }
 
 func New(options Options) *Task {

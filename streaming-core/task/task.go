@@ -54,7 +54,7 @@ func (o *Task) Daemon() error {
 	o.elementEmit = o.Emit
 	o.barrierAligner = NewBarrierAligner(o, o, o.inputCount)
 
-	if err := o.normalOperator.Open(operator.NewContext(o.logger.Named(".operator"),
+	if err := o.normalOperator.Open(operator.NewContext(o.logger.Named("operator"),
 		o.storeManager.Controller(o.Name()),
 		o.callerChan, operator.NewTimerManager()),
 		o.elementEmit); err != nil {
@@ -111,8 +111,8 @@ func (o *Task) ProcessData(data internalData) {
 func (o *Task) TriggerBarrier(barrier Barrier) {
 	o.rwMutex.Lock()
 	o.elementEmit = o.MutexEmit
-	o.Emit(barrier)
 	o.NotifyBarrierCome(barrier)
+	o.Emit(barrier)
 	o.rwMutex.Unlock()
 	o.elementEmit = o.Emit
 	message := ACK

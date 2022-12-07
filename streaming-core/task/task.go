@@ -109,6 +109,7 @@ func (o *Task) ProcessData(data internalData) {
 // -------------------------------------BarrierTrigger---------------------------------------------
 
 func (o *Task) TriggerBarrier(barrier Barrier) {
+	//FIXME  the barrier ignored an event.
 	o.rwMutex.Lock()
 	o.elementEmit = o.MutexEmit
 	o.NotifyBarrierCome(barrier)

@@ -142,6 +142,9 @@ func (s *source[OUT]) Open(ctx Context, collector element.Collector[OUT]) error 
 		for _, location := range recoverFileLocations {
 			s.enumerator.AddLocation(location)
 		}
+		for _, locations := range s.state.PendingRemove {
+			s.enumerator.AddDedupeLocations(locations)
+		}
 	}
 	if s.state.ReadingLocation != emptyLocation {
 		s.enumerator.AddLocation(s.state.ReadingLocation)

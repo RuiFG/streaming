@@ -15,7 +15,7 @@ func Run(fn func() error) (err error) {
 			debug.PrintStack()
 			switch x := r.(type) {
 			case string:
-				err = errors.New(x)
+				err = fmt.Errorf(x)
 			case error:
 				err = x
 			default:

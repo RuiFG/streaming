@@ -1,8 +1,8 @@
 package stream
 
 import (
-	_c "context"
 	"github.com/RuiFG/streaming/streaming-core/common/safe"
+	"github.com/RuiFG/streaming/streaming-core/common/status"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/RuiFG/streaming/streaming-core/task"
@@ -42,8 +42,6 @@ var DefaultEnvironmentOptions = EnvironmentOptions{
 
 // Environment is stream environment, every stream application needs the support of the *Environment.
 type Environment struct {
-	ctx               _c.Context
-	cancel            _c.CancelFunc
 	logger            log.Logger
 	options           EnvironmentOptions
 	barrierSignalChan chan task.Signal
@@ -52,6 +50,8 @@ type Environment struct {
 	storeBackend      store.Backend
 	allChainTasks     []*task.Task
 
+	status    status.Status
+	done      chan struct{}
 	errorChan chan error
 }
 
@@ -64,69 +64,84 @@ func (e *Environment) Start() error {
 	if len(e.sourceInitFns) <= 0 {
 		return errors.Errorf("source init fn should not be empty")
 	}
-	//0. check stream graph and print
 
-	//1. init all task
-	for _, initFn := range e.sourceInitFns {
-		if rootTask, chainTasks, err := initFn(); err != nil {
-			return errors.WithMessage(err, "failed to init task")
-		} else {
-			if rootTask != nil {
-				rootTasks = append(rootTasks, rootTask)
-			}
-			if chainTasks != nil {
-				e.allChainTasks = append(e.allChainTasks, chainTasks...)
-			}
-		}
-	}
+	if status.CAP(&e.status, status.Ready, status.Running) {
+		//0. check stream graph and print
 
-	//2. start coordinator
-	e.coordinator = task.NewCoordinator(rootTasks, e.allChainTasks, e.storeBackend, e.barrierSignalChan,
-		e.options.MaxConcurrentCheckpoints, e.options.MinPauseBetweenCheckpoints, e.options.CheckpointTimeout, e.options.TolerableCheckpointFailureNumber)
-	e.coordinator.Activate()
-
-	//3. start all chain task
-	for _, _task := range e.allChainTasks {
-		safe.GoChannel(_task.Daemon, e.errorChan)
-	}
-	e.startMonitor()
-	//4. waiting task running
-	for _, _task := range e.allChainTasks {
-		for !_task.Running() {
-			select {
-			case <-e.ctx.Done():
-				e.logger.Error("the current application has been stopped, interrupting task")
-				return errors.Errorf("unable to start the application")
-			default:
-				time.Sleep(10 * time.Millisecond)
+		//1. init all task
+		for _, initFn := range e.sourceInitFns {
+			if rootTask, chainTasks, err := initFn(); err != nil {
+				return errors.WithMessage(err, "failed to init task")
+			} else {
+				if rootTask != nil {
+					rootTasks = append(rootTasks, rootTask)
+				}
+				if chainTasks != nil {
+					e.allChainTasks = append(e.allChainTasks, chainTasks...)
+				}
 			}
 		}
-	}
-	//5. start periodic checkpoint if enable
-	if e.options.EnablePeriodicCheckpoint > 0 {
-		e.startPeriodicCheckpoint()
-	}
 
+		//2. start coordinator
+		e.coordinator = task.NewCoordinator(rootTasks, e.allChainTasks, e.storeBackend, e.barrierSignalChan,
+			e.options.MaxConcurrentCheckpoints, e.options.MinPauseBetweenCheckpoints, e.options.CheckpointTimeout, e.options.TolerableCheckpointFailureNumber)
+		e.coordinator.Activate()
+
+		//3. start all chain task
+		for _, _task := range e.allChainTasks {
+			safe.GoChannel(_task.Daemon, e.errorChan)
+		}
+		e.startMonitor()
+		//4. waiting task running
+		for _, _task := range e.allChainTasks {
+			for !_task.Running() {
+				select {
+				case <-e.done:
+					e.logger.Error("the current application has been stopped, interrupting task")
+					return errors.Errorf("unable to start the application")
+				default:
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+		}
+		//5. start periodic checkpoint if enable
+		if e.options.EnablePeriodicCheckpoint > 0 {
+			e.startPeriodicCheckpoint()
+		}
+	}
 	return nil
 }
 
 func (e *Environment) Stop() error {
-	if e.coordinator != nil {
-		e.coordinator.Deactivate()
-		e.coordinator.Wait()
+	return e.stop(false)
+}
+
+func (e *Environment) Done() <-chan struct{} {
+	return e.done
+}
+
+func (e *Environment) stop(abnormal bool) error {
+	if status.CAP(&e.status, status.Running, status.Closed) {
+		close(e.done)
+		if e.coordinator != nil {
+			e.coordinator.Deactivate(abnormal)
+			<-e.coordinator.Done()
+		}
+		for _, _task := range e.allChainTasks {
+			_task.Close()
+		}
+		return e.storeBackend.Close()
 	}
-	for _, _task := range e.allChainTasks {
-		_task.Close()
-	}
-	return e.storeBackend.Close()
+	return nil
+
 }
 
 func (e *Environment) startMonitor() {
 	go func() {
 		err := <-e.errorChan
 		if err != nil {
-			e.logger.Error("monitored task error.", err)
-			e.cancel()
+			e.logger.Errorw("monitored task error", "err", err)
+			_ = e.stop(true)
 		}
 	}()
 }
@@ -136,7 +151,8 @@ func (e *Environment) startPeriodicCheckpoint() {
 		ticker := time.NewTicker(e.options.EnablePeriodicCheckpoint)
 		for true {
 			select {
-			case <-e.ctx.Done():
+			case <-e.done:
+				e.logger.Info("periodic checkpoint stopped")
 				return
 			case <-ticker.C:
 				e.coordinator.TriggerCheckpoint()
@@ -153,10 +169,8 @@ func New(options EnvironmentOptions) (*Environment, error) {
 	} else {
 		storeBackend = fs
 	}
-	ctx, cancelFunc := _c.WithCancel(_c.Background())
 	return &Environment{
-		ctx:               ctx,
-		cancel:            cancelFunc,
+		done:              make(chan struct{}),
 		logger:            log.Global().Named("environment"),
 		options:           options,
 		barrierSignalChan: make(chan task.Signal),

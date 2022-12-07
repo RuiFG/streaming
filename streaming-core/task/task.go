@@ -1,7 +1,7 @@
 package task
 
 import (
-	_c "context"
+	"github.com/RuiFG/streaming/streaming-core/common/status"
 	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/operator"
@@ -12,14 +12,14 @@ import (
 
 type Task struct {
 	name           string
-	ctx            _c.Context
-	cancelFunc     _c.CancelFunc
+	status         status.Status
+	done           chan struct{}
 	logger         log.Logger
 	storeManager   store.Manager
 	callerChan     chan func()
 	normalOperator operator.NormalOperator
-	running        bool
-	rwMutex        *sync.RWMutex
+
+	rwMutex *sync.RWMutex
 
 	inputChan  chan internalData
 	inputCount int
@@ -31,98 +31,101 @@ type Task struct {
 	dataEmit    Emit
 }
 
-func (o *Task) Name() string {
-	return o.name
+func (t *Task) Name() string {
+	return t.name
 }
 
 // InitEmit will be called multiple times before Daemon run
-func (o *Task) InitEmit(index int) Emit {
-	if o.running {
-		panic("the task is already running. It is forbidden to call")
-	}
-	o.inputCount += 1
+func (t *Task) InitEmit(index int) Emit {
+	t.inputCount += 1
 	return func(eob Data) {
-		o.inputChan <- internalData{
+		t.inputChan <- internalData{
 			index: index,
 			eob:   eob,
 		}
 	}
 }
 
-func (o *Task) Daemon() error {
-	o.logger.Info("staring...")
-	o.elementEmit = o.Emit
-	o.barrierAligner = NewBarrierAligner(o, o, o.inputCount)
+func (t *Task) Daemon() error {
+	if status.CAP(&t.status, status.Ready, status.Running) {
+		t.elementEmit = t.Emit
+		t.barrierAligner = NewBarrierAligner(t, t, t.inputCount)
 
-	if err := o.normalOperator.Open(operator.NewContext(o.logger.Named("operator"),
-		o.storeManager.Controller(o.Name()),
-		o.callerChan, operator.NewTimerManager()),
-		o.elementEmit); err != nil {
-		return errors.WithMessage(err, "failed to start task")
-	}
-	o.running = true
-	//TODO: use priority mailbox and discard rwMutex
-	for {
-		select {
-		case <-o.ctx.Done():
-			o.running = false
-			if err := o.normalOperator.Close(); err != nil {
-				return err
-			}
-			return nil
-		case caller := <-o.callerChan:
-			caller()
-		case e1 := <-o.inputChan:
-			o.barrierAligner.Handler(e1)
-			bufferSize := len(o.inputChan)
-			for i := 0; i < bufferSize; i++ {
-				o.barrierAligner.Handler(<-o.inputChan)
+		if err := t.normalOperator.Open(operator.NewContext(t.logger.Named("operator"),
+			t.storeManager.Controller(t.Name()),
+			t.callerChan, operator.NewTimerManager()),
+			t.elementEmit); err != nil {
+			return errors.WithMessage(err, "failed to start task")
+		}
+		t.logger.Info("started")
+		t.status = status.Running
+		//TODO: use priority mailbox and discard rwMutex
+		for {
+			select {
+			case <-t.done:
+				return nil
+			case caller := <-t.callerChan:
+				caller()
+			case e1 := <-t.inputChan:
+				t.barrierAligner.Handler(e1)
+				bufferSize := len(t.inputChan)
+				for i := 0; i < bufferSize; i++ {
+					t.barrierAligner.Handler(<-t.inputChan)
+				}
 			}
 		}
 	}
+	return nil
 }
 
-func (o *Task) Running() bool {
-	return o.running
+func (t *Task) Running() bool {
+	return t.status.Running()
 }
 
-func (o *Task) Close() {
-	o.cancelFunc()
+func (t *Task) Close() {
+	if status.CAP(&t.status, status.Running, status.Closed) {
+		close(t.done)
+		if err := t.normalOperator.Close(); err != nil {
+			t.logger.Errorf("failed to status", "err", err)
+		}
+		t.logger.Info("stopped")
+	}
+
 }
 
-func (o *Task) Emit(element element.NormalElement) {
-	o.dataEmit(element)
+func (t *Task) Emit(element element.NormalElement) {
+	t.dataEmit(element)
 }
 
-func (o *Task) MutexEmit(e element.NormalElement) {
-	o.rwMutex.RLock()
-	o.Emit(e)
-	o.rwMutex.RUnlock()
+func (t *Task) MutexEmit(e element.NormalElement) {
+	t.rwMutex.RLock()
+	t.Emit(e)
+	t.rwMutex.RUnlock()
 }
 
 // -------------------------------------Processor---------------------------------------------
 
-func (o *Task) ProcessData(data internalData) {
-	o.normalOperator.ProcessElement(data.eob, data.index)
+func (t *Task) ProcessData(data internalData) {
+	t.normalOperator.ProcessElement(data.eob, data.index)
 }
 
 // -------------------------------------BarrierTrigger---------------------------------------------
 
-func (o *Task) TriggerBarrier(barrier Barrier) {
+func (t *Task) TriggerBarrier(barrier Barrier) {
 	//FIXME  the barrier ignored an event.
-	o.rwMutex.Lock()
-	o.elementEmit = o.MutexEmit
-	o.NotifyBarrierCome(barrier)
-	o.Emit(barrier)
-	o.rwMutex.Unlock()
-	o.elementEmit = o.Emit
+	t.rwMutex.Lock()
+	t.elementEmit = t.MutexEmit
+	t.NotifyBarrierCome(barrier)
+	t.Emit(barrier)
+	t.rwMutex.Unlock()
+	t.elementEmit = t.Emit
 	message := ACK
-	if err := o.storeManager.Save(barrier.CheckpointId); err != nil {
-		o.logger.Warnw("trigger barrier unable to complete", "err", err, "task", o.name)
+	if err := t.storeManager.Save(barrier.CheckpointId); err != nil {
+		t.logger.Warnw("trigger barrier unable to complete", "err", err, "task", t.name)
 		message = DEC
 	}
-	o.barrierSignalChan <- Signal{
-		Name:    o.Name(),
+	t.barrierSignalChan <- Signal{
+		Name:    t.Name(),
 		Message: message,
 		Barrier: barrier,
 	}
@@ -130,31 +133,29 @@ func (o *Task) TriggerBarrier(barrier Barrier) {
 
 // -------------------------------------BarrierListener-------------------------------------
 
-func (o *Task) NotifyBarrierCome(barrier Barrier) {
-	o.normalOperator.NotifyCheckpointCome(barrier.CheckpointId)
+func (t *Task) NotifyBarrierCome(barrier Barrier) {
+	t.normalOperator.NotifyCheckpointCome(barrier.CheckpointId)
 
 }
 
-func (o *Task) NotifyBarrierComplete(barrier Barrier) {
-	o.callerChan <- func() {
-		o.normalOperator.NotifyCheckpointComplete(barrier.CheckpointId)
+func (t *Task) NotifyBarrierComplete(barrier Barrier) {
+	t.callerChan <- func() {
+		t.normalOperator.NotifyCheckpointComplete(barrier.CheckpointId)
 	}
 }
 
-func (o *Task) NotifyBarrierCancel(barrier Barrier) {
-	o.callerChan <- func() {
-		o.normalOperator.NotifyCheckpointCancel(barrier.CheckpointId)
+func (t *Task) NotifyBarrierCancel(barrier Barrier) {
+	t.callerChan <- func() {
+		t.normalOperator.NotifyCheckpointCancel(barrier.CheckpointId)
 	}
 }
 
 func New(options Options) *Task {
-	ctx, cancelFunc := _c.WithCancel(_c.Background())
 	return &Task{
 		name:              options.Name,
-		ctx:               ctx,
-		cancelFunc:        cancelFunc,
+		status:            status.Ready,
+		done:              make(chan struct{}),
 		logger:            log.Global().Named(options.Name + ".task"),
-		running:           false,
 		rwMutex:           &sync.RWMutex{},
 		inputChan:         make(chan internalData, options.BufferSize),
 		inputCount:        0,

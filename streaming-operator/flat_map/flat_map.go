@@ -46,7 +46,7 @@ func (m *operator[IN, OUT]) ProcessEvent(event *element.Event[IN]) {
 	}
 }
 
-func Apply[IN, OUT any](upstream stream.Stream[IN], fn Fn[IN, OUT], name string, withOptions ...WithOptions[IN, OUT]) (stream.Stream[OUT], error) {
+func Apply[IN, OUT any](upstream stream.Stream[IN], name string, withOptions ...WithOptions[IN, OUT]) (stream.Stream[OUT], error) {
 	o := &options[IN, OUT]{}
 	for _, withOptionsFn := range withOptions {
 		if err := withOptionsFn(o); err != nil {
@@ -66,7 +66,7 @@ func Apply[IN, OUT any](upstream stream.Stream[IN], fn Fn[IN, OUT], name string,
 				BaseRichOperator: BaseRichOperator[IN, any, OUT]{Rich: o.rich},
 			})
 	}
-	return stream.ApplyOneInput(upstream, stream.OperatorStreamOptions{
+	return stream.ApplyOneInput[IN, OUT](upstream, stream.OperatorStreamOptions{
 		Name:     name,
 		Operator: normalOperator,
 	})

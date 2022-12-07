@@ -146,6 +146,14 @@ func (e *Enumerator) AddLocation(location Location) {
 	}
 }
 
+func (e *Enumerator) AddDedupeLocations(locations []Location) {
+	e.cond.L.Lock()
+	defer e.cond.L.Unlock()
+	for _, location := range locations {
+		e.dedupeMap[location.AbsolutePath] = struct{}{}
+	}
+}
+
 func (e *Enumerator) RemoveDedupeLocations(locations []Location) {
 	e.cond.L.Lock()
 	defer e.cond.L.Unlock()

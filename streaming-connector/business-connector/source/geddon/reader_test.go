@@ -59,7 +59,7 @@ func TestReader_Read(t *testing.T) {
 	log.Setup(log.DefaultOptions())
 	done := make(chan struct{})
 	var reader *Reader[string]
-	reader = NewReader(&mockContext{}, done, NewTestCollector(t, []string{"123123", "123123"}), func(filename string, data []byte) string {
+	reader = NewReader(&mockContext{}, done, NewTestCollector(t, []string{"123123", "123123", ""}), func(filename string, data []byte) string {
 		return strings.TrimSpace(string(data))
 	}, '\n', nil)
 	dir := path.Join(os.TempDir(), RandStr(10))
@@ -81,7 +81,7 @@ func TestReader_SnapshotState(t *testing.T) {
 	_ = os.Mkdir(dir, os.ModePerm)
 	filePath := path.Join(dir, "1.log")
 	var reader *Reader[string]
-	reader = NewReader(&mockContext{}, done, NewTestCollector(t, []string{"123123", "123123"}, lockFn{
+	reader = NewReader(&mockContext{}, done, NewTestCollector(t, []string{"123123", "123123", ""}, lockFn{
 		index: 0,
 		fn: func() error {
 			location := reader.SnapshotState()

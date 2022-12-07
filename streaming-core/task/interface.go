@@ -1,40 +1,28 @@
 package task
 
 import (
-	"github.com/RuiFG/streaming/streaming-core/barrier"
-	"github.com/RuiFG/streaming/streaming-core/element"
+	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
 )
 
-type QOS uint
+// Data like element.NormalElement
+type Data any
 
-const (
-	AtMostOnce QOS = iota
-	AtLeastOnce
-	ExactlyOnce
-)
+type Emit func(Data)
+
+type internalData struct {
+	index int
+	eob   Data
+}
 
 type Options struct {
-	QOS
-	NameSuffix         string
-	BarrierSignalChan  chan element.Signal
-	BarrierTriggerChan chan element.BarrierType
+	Name              string
+	Operator          operator.NormalOperator
+	BarrierSignalChan chan Signal
 
-	InputCount   int
-	OutputCount  int
+	//sink DataEmit is nil
+	DataEmit Emit
+
+	BufferSize   int
 	StoreManager store.Manager
-}
-
-func (o Options) Name() string {
-	return "." + o.NameSuffix
-}
-
-type Task interface {
-	Name() string
-	//Daemon  Running is life cycle
-	Daemon() error
-	Running() bool
-
-	barrier.Trigger
-	barrier.Listener
 }

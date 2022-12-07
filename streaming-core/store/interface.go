@@ -1,25 +1,34 @@
 package store
 
-type StateType string
+import "sync"
+
+type StateType int
 
 const (
-	ValueType = "value"
-	MapType   = "map"
+	NonParallelizeState StateType = iota
+	ParallelizeState
 )
 
 type mirrorState struct {
-	StateType
-	Bytes []byte
+	Type StateType
+	//content must be Serializable
+	Payload []byte
 }
 
-func (m mirrorState) Initialized() bool   { return false }
-func (m mirrorState) mirror() mirrorState { return m }
-func (m mirrorState) Clear()              {}
+func (m mirrorState) mirror() (mirrorState, error) { return m, nil }
 
 type State interface {
-	Initialized() bool
-	mirror() mirrorState
+	mirror() (mirrorState, error)
+}
+
+type StateController[T any] interface {
+	Pointer() *T
+	Locker() *sync.RWMutex
 	Clear()
+}
+
+type StateHandler[T any] interface {
+	Referer() *T
 }
 
 type Controller interface {
@@ -39,6 +48,5 @@ type Backend interface {
 	Save(id int64, name string, state []byte) error
 	Persist(checkpointId int64) error //Save the whole checkpoint state into storage
 	Get(name string) ([]byte, error)
-	Clean() error
 	Close() error
 }

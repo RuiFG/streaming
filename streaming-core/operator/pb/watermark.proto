@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package pb;
+option go_package = "./pb";
+message PartialWatermark {
+  bool idle = 1;
+  int64 watermark = 2;
+}
+
+message CombineWatermark {
+  bool idle = 1;
+  int64 combinedWatermark = 2;
+  repeated PartialWatermark partialWatermarks = 3;
+}

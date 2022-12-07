@@ -1,8 +1,9 @@
 package store
 
 import (
-	"bytes"
-	"encoding/gob"
+	"github.com/RuiFG/streaming/streaming-core/store/pb"
+	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 	"sync"
 )
 
@@ -13,6 +14,29 @@ type manager struct {
 	backend Backend
 }
 
+func (m *manager) init() error {
+	if bytes, err := m.backend.Get(m.name); err != nil {
+		return errors.WithMessagef(err, "failed to get %s state manager's state", m.name)
+	} else {
+		if bytes != nil {
+			managerState := &pb.ManagerState{}
+			if err := proto.Unmarshal(bytes, managerState); err != nil {
+				return errors.WithMessagef(err, "failed to unmarshal %s state manager's state", m.name)
+			}
+			for namespace, controllerState := range managerState.Data {
+				m.mm[namespace] = &controller{mm: &sync.Map{}}
+				for name, stateV := range controllerState.Data {
+					m.mm[namespace].Store(name, mirrorState{
+						Type:    StateType(stateV.Type),
+						Payload: stateV.Payload,
+					})
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (m *manager) Controller(namespace string) Controller {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -20,27 +44,38 @@ func (m *manager) Controller(namespace string) Controller {
 		return c
 	} else {
 		c = &controller{&sync.Map{}}
+		m.mm[namespace] = c
 		return c
 	}
 }
 
-func (m *manager) Save(id int64) error {
-	mmm := map[string]map[string]mirrorState{}
-	for namespace, c := range m.mm {
-		if mmm[namespace] == nil {
-			mmm[namespace] = map[string]mirrorState{}
+func (m *manager) Save(id int64) (err error) {
+	managerState := &pb.ManagerState{Data: map[string]*pb.ControllerState{}}
+	for namespace, control := range m.mm {
+		if managerState.Data[namespace] == nil {
+			managerState.Data[namespace] = &pb.ControllerState{Data: map[string]*pb.State{}}
 		}
-		c.Range(func(key string, state State) bool {
-			mmm[namespace][key] = state.mirror()
-			return true
+		control.Range(func(key string, state State) bool {
+			var ms mirrorState
+			if ms, err = state.mirror(); err != nil {
+				return false
+			} else {
+				managerState.Data[namespace].Data[key] = &pb.State{
+					Type:    int32(ms.Type),
+					Payload: ms.Payload,
+				}
+				return true
+			}
 		})
+		if err != nil {
+			return errors.WithMessage(err, "failed to save data")
+		}
 	}
-	var buffer bytes.Buffer
-	decoder := gob.NewEncoder(&buffer)
-	if err := decoder.Encode(mmm); err != nil {
+	if marshal, err := proto.Marshal(managerState); err != nil {
 		return err
+	} else {
+		return m.backend.Save(id, m.name, marshal)
 	}
-	return m.backend.Save(id, m.name, buffer.Bytes())
 }
 
 func (m *manager) Clean() error {
@@ -53,28 +88,12 @@ func (m *manager) Clean() error {
 	return nil
 }
 
-type nonPersistenceManager struct {
-	manager
-}
-
-func (m *nonPersistenceManager) Save(id int64) error {
-	return nil
-}
-
-func NewManager(name string, backend Backend) Manager {
-	return &manager{
+func NewManager(name string, backend Backend) (Manager, error) {
+	managerV := &manager{
 		mutex:   &sync.Mutex{},
 		mm:      map[string]*controller{},
 		name:    name,
 		backend: backend,
 	}
-}
-
-func NewNonPersistenceManager(name string, backend Backend) Manager {
-	return &nonPersistenceManager{manager{
-		mutex:   &sync.Mutex{},
-		mm:      map[string]*controller{},
-		name:    name,
-		backend: backend,
-	}}
+	return managerV, managerV.init()
 }

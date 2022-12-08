@@ -32,7 +32,6 @@ func (o *OneInputNormalOperator[IN, OUT]) Open(ctx Context, emit element.Emit) e
 }
 
 func (o *OneInputNormalOperator[IN, OUT]) Close() error {
-
 	return o.OneInputOperator.Close()
 }
 

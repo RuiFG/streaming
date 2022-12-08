@@ -12,7 +12,8 @@ type OperatorStreamOptions struct {
 	Operator operator.NormalOperator
 }
 
-type OperatorStream struct {
+type OperatorStream[OUT any] struct {
+	nil                 OUT
 	options             OperatorStreamOptions
 	env                 *Environment
 	downstreamInitFnMap map[string]downstreamInitFn
@@ -24,30 +25,34 @@ type OperatorStream struct {
 	initErr   error
 }
 
-func (o *OperatorStream) Name() string {
+func (o *OperatorStream[OUT]) Generics() OUT {
+	return o.nil
+}
+
+func (o *OperatorStream[OUT]) Name() string {
 	return o.options.Name
 }
 
-func (o *OperatorStream) Env() *Environment {
+func (o *OperatorStream[OUT]) Environment() *Environment {
 	return o.env
 }
 
-func (o *OperatorStream) addUpstream(name string) {
+func (o *OperatorStream[OUT]) addUpstream(name string) {
 	o.upstreamMap[name] = struct{}{}
 }
 
-func (o *OperatorStream) addDownstream(name string, downstreamInitFn downstreamInitFn) {
+func (o *OperatorStream[OUT]) addDownstream(name string, downstreamInitFn downstreamInitFn) {
 	o.downstreamInitFnMap[name] = downstreamInitFn
 }
 
-func (o *OperatorStream) Init(index int) func() (task.Emit, []*task.Task, error) {
+func (o *OperatorStream[OUT]) Init(index int) func() (task.Emit, []*task.Task, error) {
 	return func() (task.Emit, []*task.Task, error) {
 		o.init()
 		return o.task.InitEmit(index), o.chainTask, o.initErr
 	}
 }
 
-func (o *OperatorStream) init() {
+func (o *OperatorStream[OUT]) init() {
 	o.once.Do(func() {
 		var (
 			emits              []task.Emit
@@ -93,9 +98,9 @@ func ApplyOneInput[IN, OUT any](upstream Stream[IN], streamOptions OperatorStrea
 
 	//add operator prefix
 	streamOptions.Name = "operator." + streamOptions.Name
-	outputStream := &OperatorStream{
+	outputStream := &OperatorStream[OUT]{
 		options:             streamOptions,
-		env:                 upstream.Env(),
+		env:                 upstream.Environment(),
 		once:                &sync.Once{},
 		upstreamMap:         map[string]struct{}{},
 		downstreamInitFnMap: map[string]downstreamInitFn{},
@@ -105,15 +110,15 @@ func ApplyOneInput[IN, OUT any](upstream Stream[IN], streamOptions OperatorStrea
 	return outputStream, nil
 }
 
-func ApplyTwoInput[IN1, IN2 any](leftUpstream Stream[IN1], rightUpstream Stream[IN2], streamOptions OperatorStreamOptions) (*OperatorStream, error) {
-	if leftUpstream.Env() != rightUpstream.Env() {
+func ApplyTwoInput[IN1, IN2 any, OUT any](leftUpstream Stream[IN1], rightUpstream Stream[IN2], streamOptions OperatorStreamOptions) (Stream[OUT], error) {
+	if leftUpstream.Environment() != rightUpstream.Environment() {
 		return nil, ErrMultipleEnv
 	}
 	//add operator prefix
 	streamOptions.Name = "operator." + streamOptions.Name
-	outputStream := &OperatorStream{
+	outputStream := &OperatorStream[OUT]{
 		options:             streamOptions,
-		env:                 leftUpstream.Env(),
+		env:                 leftUpstream.Environment(),
 		once:                &sync.Once{},
 		upstreamMap:         map[string]struct{}{},
 		downstreamInitFnMap: map[string]downstreamInitFn{},

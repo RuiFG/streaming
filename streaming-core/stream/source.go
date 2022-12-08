@@ -12,7 +12,7 @@ type SourceStreamOptions[OUT any] struct {
 }
 
 type SourceStream[OUT any] struct {
-	OperatorStream
+	OperatorStream[OUT]
 }
 
 func (s *SourceStream[T]) Init() (*task.Task, []*task.Task, error) {
@@ -22,7 +22,7 @@ func (s *SourceStream[T]) Init() (*task.Task, []*task.Task, error) {
 
 func FormSource[OUT any](env *Environment, sourceOptions SourceStreamOptions[OUT]) (Stream[OUT], error) {
 	sourceStream := &SourceStream[OUT]{
-		OperatorStream{
+		OperatorStream: OperatorStream[OUT]{
 			options: OperatorStreamOptions{
 				Name: sourceOptions.Name,
 				Operator: operator.OneInputOperatorToNormal[any, OUT](&operator.SourceOperatorWrap[OUT]{

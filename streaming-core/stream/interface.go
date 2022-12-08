@@ -10,7 +10,8 @@ var (
 )
 
 type Stream[T any] interface {
-	Env() *Environment
+	Generics() T
+	Environment() *Environment
 	//Name returns the name of the task to be created.
 	Name() string
 	addDownstream(name string, downstreamInitFn downstreamInitFn)

@@ -222,7 +222,9 @@ func FromSource[T any](env *stream.Environment, name string, withOptions ...With
 			return nil, err
 		}
 	}
-
+	if env.Options().EnablePeriodicCheckpoint <= 0 {
+		return nil, errors.New("geddon source needs to open periodic checkpoints")
+	}
 	return stream.FormSource[T](env, stream.SourceStreamOptions[T]{
 		Name: name,
 		Source: &source[T]{

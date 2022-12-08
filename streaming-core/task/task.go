@@ -58,7 +58,6 @@ func (t *Task) Daemon() error {
 			return errors.WithMessage(err, "failed to start task")
 		}
 		t.logger.Info("started")
-		t.status = status.Running
 		//TODO: use priority mailbox and discard rwMutex
 		for {
 			select {
@@ -121,7 +120,7 @@ func (t *Task) TriggerBarrier(barrier Barrier) {
 	t.elementEmit = t.Emit
 	message := ACK
 	if err := t.storeManager.Save(barrier.CheckpointId); err != nil {
-		t.logger.Warnw("trigger barrier unable to complete", "err", err, "task", t.name)
+		t.logger.Warnw("trigger barrier unable to ack", "err", err, "task", t.name)
 		message = DEC
 	}
 	t.barrierSignalChan <- Signal{

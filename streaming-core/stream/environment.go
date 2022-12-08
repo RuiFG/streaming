@@ -51,7 +51,6 @@ type Environment struct {
 	allChainTasks     []*task.Task
 
 	status    status.Status
-	done      chan struct{}
 	errorChan chan error
 }
 
@@ -96,7 +95,7 @@ func (e *Environment) Start() error {
 		for _, _task := range e.allChainTasks {
 			for !_task.Running() {
 				select {
-				case <-e.done:
+				case <-e.coordinator.Done():
 					e.logger.Error("the current application has been stopped, interrupting task")
 					return errors.Errorf("unable to start the application")
 				default:
@@ -112,19 +111,17 @@ func (e *Environment) Start() error {
 	return nil
 }
 
-func (e *Environment) Stop() error {
-	return e.stop(false)
-}
-
 func (e *Environment) Done() <-chan struct{} {
-	return e.done
+	return e.coordinator.Done()
+}
+func (e *Environment) Options() EnvironmentOptions {
+	return e.options
 }
 
-func (e *Environment) stop(abnormal bool) error {
+func (e *Environment) Stop(savepoint bool) error {
 	if status.CAP(&e.status, status.Running, status.Closed) {
-		close(e.done)
 		if e.coordinator != nil {
-			e.coordinator.Deactivate(abnormal)
+			e.coordinator.Deactivate(savepoint)
 			<-e.coordinator.Done()
 		}
 		for _, _task := range e.allChainTasks {
@@ -141,8 +138,8 @@ func (e *Environment) startMonitor() {
 		err := <-e.errorChan
 		if err != nil {
 			e.logger.Errorw("monitored task error", "err", err)
-			_ = e.stop(true)
 		}
+		_ = e.Stop(false)
 	}()
 }
 
@@ -151,7 +148,7 @@ func (e *Environment) startPeriodicCheckpoint() {
 		ticker := time.NewTicker(e.options.EnablePeriodicCheckpoint)
 		for true {
 			select {
-			case <-e.done:
+			case <-e.coordinator.Done():
 				e.logger.Info("periodic checkpoint stopped")
 				return
 			case <-ticker.C:
@@ -170,7 +167,6 @@ func New(options EnvironmentOptions) (*Environment, error) {
 		storeBackend = fs
 	}
 	return &Environment{
-		done:              make(chan struct{}),
 		logger:            log.Global().Named("environment"),
 		options:           options,
 		barrierSignalChan: make(chan task.Signal),

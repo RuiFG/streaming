@@ -68,7 +68,7 @@ func (h *BarrierAligner) processBarrierDetail(barrier Barrier, index int) {
 		if barrier.CheckpointId == h.currentId {
 			h.onUpstream(index)
 		} else if barrier.CheckpointId > h.currentId {
-			//h.logger.Infof("received checkpoint barrier for checkpoint %d before complete current checkpoint %d. skipping current checkpoint.", b.CheckpointId, h.currentId)
+			//h.logger.Infof("received checkpoint barrier for checkpoint %d before ack current checkpoint %d. skipping current checkpoint.", b.CheckpointId, h.currentId)
 
 			h.releaseBlocksAndResetBarriers()
 			h.beginNewAlignment(barrier, index)

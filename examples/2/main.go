@@ -35,5 +35,5 @@ func main() {
 	_ = env.Start()
 
 	time.Sleep(120 * time.Second)
-	env.Stop()
+	env.Stop(false)
 }

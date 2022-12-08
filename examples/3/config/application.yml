@@ -1,0 +1,18 @@
+debug: true
+
+format:
+  ip_db: /Users/klein/GoLandProjects/streaming/examples/3/pkg/format/ipv46_cn.rev1.ipdbx
+  ipv6_db:
+  asn_db: /Users/klein/GoLandProjects/streaming/examples/3/pkg/format/log-format-asnip
+  view_db:
+    path: /Users/klein/GoLandProjects/streaming/examples/3/pkg/format/view.ipdbx
+    endpoint: http://ss.bscstorage.com
+    bucket: ipdbx
+    prefix: ipdb
+    delay: 24h
+geddon:
+  dir: /Users/klein/GoLandProjects/streaming/examples/3/internal/container/logs
+  scan_duration: 30s
+  pattern: .*
+
+

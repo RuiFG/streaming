@@ -6,14 +6,12 @@ import (
 	"3/pkg/plugins"
 	"3/pkg/plugins/pb"
 	"fmt"
+	jaina_sink "github.com/RuiFG/streaming/streaming-connector/business-connector/sink/jaina"
 	"github.com/RuiFG/streaming/streaming-connector/business-connector/source/geddon"
-	mock_sink "github.com/RuiFG/streaming/streaming-connector/mock-connector/sink"
-	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/stream"
 	flat_map_operator "github.com/RuiFG/streaming/streaming-operator/flat_map"
 	"github.com/RuiFG/streaming/streaming-operator/window"
-	"github.com/golang/protobuf/proto"
 	"github.com/spf13/cobra"
 	"regexp"
 	"strings"
@@ -66,16 +64,21 @@ func Start(cmd *cobra.Command, args []string) {
 		panic(err)
 	}
 	aggregator, _ := window.Apply(formatStream, "asd",
-		window.WithNonKeySelector[*format.Log, map[string]*pb.Region, []proto.Message, []proto.Message](),
-		window.WithTumblingProcessingTime[struct{}, *format.Log, map[string]*pb.Region, []proto.Message, []proto.Message](60*time.Second, 0),
-		window.WithAggregator[struct{}, *format.Log, map[string]*pb.Region, []proto.Message](plugins.RegionAggregator()))
-	if err := mock_sink.ToSink(aggregator, "mock",
-		func(in []proto.Message) {
-			fmt.Println(in)
-		},
-		func(timestamp element.Watermark) {
-			fmt.Printf("current watermark timestamp %d\n", timestamp)
-		}); err != nil {
+		window.WithNonKeySelector[*format.Log, map[string]*pb.Region, *plugins.Output, *plugins.Output](),
+		window.WithTumblingProcessingTime[struct{}, *format.Log, map[string]*pb.Region, *plugins.Output, *plugins.Output](60*time.Second, 0),
+		window.WithPassThroughProcess[struct{}, *format.Log, map[string]*pb.Region, *plugins.Output](),
+		window.WithAggregator[struct{}, *format.Log, map[string]*pb.Region, *plugins.Output, *plugins.Output](plugins.RegionAggregator()))
+	err = jaina_sink.ToSink(aggregator, "jaina",
+		jaina_sink.WithDir[*plugins.Output]("."),
+		jaina_sink.WithEncode(func(data *plugins.Output, timestamp int64) *jaina_sink.Input {
+			milli := time.UnixMilli(timestamp)
+			return &jaina_sink.Input{
+				Filename: fmt.Sprintf("%s_%d%02d%02d%02d%02d", data.Plugin, milli.Year(), milli.Month(), milli.Day(), milli.Hour(), milli.Minute()),
+				Buffer:   data.Buffer,
+				FileMode: 0644,
+			}
+		}))
+	if err != nil {
 		panic(err)
 	}
 	_ = env.Start()

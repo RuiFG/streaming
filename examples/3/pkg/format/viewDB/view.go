@@ -3,6 +3,7 @@ package viewDB
 import (
 	"context"
 	"fmt"
+	"github.com/RuiFG/streaming/streaming-core/log"
 	"io"
 	"math/rand"
 	"os"
@@ -15,7 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/sirupsen/logrus"
 )
 
 var m = new(sync.Map)
@@ -89,7 +89,7 @@ func getAndSave(endpoint, bucket, key, localPath string) error {
 	cli := S2Client(endpoint)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
-	logrus.Infof("downloading view ipdbx file: %v", key)
+	log.Global().Infof("downloading view ipdbx file: %v", key)
 	resp, err := cli.GetObjectWithContext(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -109,7 +109,7 @@ func getAndSave(endpoint, bucket, key, localPath string) error {
 	if err != nil {
 		return err
 	}
-	logrus.Infof("saving viewDB %v to %v", key, localPath)
+	log.Global().Infof("saving viewDB %v to %v", key, localPath)
 	return os.Rename(localPath+".tmp", localPath)
 }
 
@@ -133,7 +133,7 @@ func InitViewDB(endpoint, bucket, prefix, localPath string, checkUpdateDelay tim
 	var l *bsip.IPLib
 	l, err := bsip.NewIPLib(localPath)
 	if err != nil {
-		logrus.WithError(err).Warnf("failed to load local viewDB %v", localPath)
+		log.Global().Warnw(fmt.Sprintf("failed to load local viewDB %v", localPath), "err", err)
 	} else {
 		close(done)
 		l.UseLanguage("EN")
@@ -152,17 +152,17 @@ func InitViewDB(endpoint, bucket, prefix, localPath string, checkUpdateDelay tim
 		for time.Sleep(delay()); ; time.Sleep(delay()) {
 			changed, err := CheckAndUpate(endpoint, bucket, prefix, localPath)
 			if err != nil {
-				logrus.WithError(err).Errorln("failed to check&update view ipdb")
+				log.Global().Errorw("failed to check&update view ipdb", "err", err)
 				continue
 			}
 			if !changed {
-				logrus.Infoln("view ipdb unchanged")
+				log.Global().Info("view ipdb unchanged")
 				continue
 			}
-			logrus.Infoln("view ipdb updated")
+			log.Global().Info("view ipdb updated")
 			lib, err := bsip.NewIPLib(localPath)
 			if err != nil {
-				logrus.WithError(err).Errorln("failed to load view ipdb")
+				log.Global().Errorw("failed to load view ipdb", "err", err)
 				continue
 			}
 			lib.UseLanguage("EN")

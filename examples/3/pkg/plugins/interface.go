@@ -10,5 +10,11 @@ type Plugin[T proto.Message] interface {
 	ID(log *format.Log) string
 	NewStruct(log *format.Log) T
 	Calculate(log *format.Log, v T)
+	ToMessage(map[string]T) proto.Message
 	PluginName() string
+}
+
+type Output struct {
+	Plugin string
+	Buffer []byte
 }

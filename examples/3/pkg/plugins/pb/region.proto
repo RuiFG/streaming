@@ -22,3 +22,7 @@ message Region{
 
 }
 
+message RegionList {
+  repeated Region  list = 1;
+}
+

@@ -89,13 +89,12 @@ func WithTrigger[KEY comparable, IN, ACC, WIN, OUT any](fn TriggerFn[KEY, IN]) W
 	}
 }
 
-func WithAggregator[KEY comparable, IN, ACC, OUT any](fn AggregatorFn[IN, ACC, OUT]) WithOptions[KEY, IN, ACC, OUT, OUT] {
-	return func(opts *options[KEY, IN, ACC, OUT, OUT]) error {
+func WithAggregator[KEY comparable, IN, ACC, WIN, OUT any](fn AggregatorFn[IN, ACC, WIN]) WithOptions[KEY, IN, ACC, WIN, OUT] {
+	return func(opts *options[KEY, IN, ACC, WIN, OUT]) error {
 		if fn == nil {
 			return errors.Errorf("AggregatorFn can't ne nil")
 		}
 		opts.aggregatorFn = fn
-		opts.processWindowFn = &PassThroughProcessWindowFn[KEY, OUT]{}
 		return nil
 	}
 }
@@ -108,4 +107,12 @@ func WithProcess[KEY comparable, IN, ACC, WIN, OUT any](fn ProcessWindowFn[KEY, 
 		opts.processWindowFn = fn
 		return nil
 	}
+}
+
+func WithPassThroughProcess[KEY comparable, IN, ACC, OUT any]() WithOptions[KEY, IN, ACC, OUT, OUT] {
+	return func(opts *options[KEY, IN, ACC, OUT, OUT]) error {
+		opts.processWindowFn = &PassThroughProcessWindowFn[KEY, OUT]{}
+		return nil
+	}
+
 }

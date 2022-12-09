@@ -5,8 +5,8 @@ import (
 	"bt.baishancloud.com/log/bsip"
 	"bytes"
 	"fmt"
+	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"net"
 	"net/url"
 	"strconv"
@@ -110,125 +110,126 @@ func Format(raw string) (*Log, error) {
 		return nil, errors.New("illegal field count")
 	}
 	var (
-		log = &Log{Raw: raw}
-		err error
+		formatLog = &Log{Raw: raw}
+		err       error
 	)
 
-	if log.ClientIp, err = extractString(tmp[0], false, false); err != nil {
+	if formatLog.ClientIp, err = extractString(tmp[0], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal NetIP")
 	}
-	if log.Domain, err = extractString(tmp[1], false, false); err != nil {
+	if formatLog.Domain, err = extractString(tmp[1], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal Domain")
 	}
-	if log.ContentType, err = extractString(tmp[2], true, true); err != nil {
+	if formatLog.ContentType, err = extractString(tmp[2], true, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal ContentType")
 	}
-	if log.RequestTime, err = extractString(tmp[3]+" "+tmp[4], true, true); err != nil {
+	if formatLog.RequestTime, err = extractString(tmp[3]+" "+tmp[4], true, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal ParsedTime")
 	}
-	if log.RequestMethod, err = extractString(tmp[5], true, false); err != nil {
+	if formatLog.RequestMethod, err = extractString(tmp[5], true, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal RequestMethod")
 	}
-	if log.RequestUrl, err = extractString(tmp[6], false, false); err != nil {
+	if formatLog.RequestUrl, err = extractString(tmp[6], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal ParsedUrl")
 	}
-	if log.RequestVersion, err = extractString(tmp[7], false, true); err != nil {
+	if formatLog.RequestVersion, err = extractString(tmp[7], false, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal RequestVersion")
 	}
-	if log.HttpCode, err = extractInt64(tmp[8], false, false); err != nil {
+	if formatLog.HttpCode, err = extractInt64(tmp[8], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal HttpCode")
 	}
-	if log.BytesSent, err = extractInt64(tmp[9], false, false); err != nil {
+	if formatLog.BytesSent, err = extractInt64(tmp[9], false, false); err != nil {
 		return nil, errors.New("illegal byte sent format: " + tmp[8])
 	}
-	if log.Referer, err = extractString(tmp[10], true, true); err != nil {
+	if formatLog.Referer, err = extractString(tmp[10], true, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal Referer")
 	}
-	if log.UserAgent, err = extractString(tmp[11], true, true); err != nil {
+	if formatLog.UserAgent, err = extractString(tmp[11], true, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal UserAgent")
 	}
-	if log.ResponseTime, err = extractInt64(tmp[12], false, false); err != nil {
+	if formatLog.ResponseTime, err = extractInt64(tmp[12], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal ResponseTime")
 	}
-	if log.BodyBytesSent, err = extractInt64(tmp[13], false, false); err != nil {
+	if formatLog.BodyBytesSent, err = extractInt64(tmp[13], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal BodyBytesSent")
 	}
-	if log.ContentLength, err = extractInt64(tmp[14], true, true); err != nil {
+	if formatLog.ContentLength, err = extractInt64(tmp[14], true, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal ContentLength")
 	}
-	if log.Range, err = extractString(tmp[15], true, true); err != nil {
+	if formatLog.Range, err = extractString(tmp[15], true, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal Range")
 	}
-	if log.XForwardedFor, err = extractString(tmp[16], true, true); err != nil {
+	if formatLog.XForwardedFor, err = extractString(tmp[16], true, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal XForwardedFor")
 	}
-	if log.Split1, err = extractStringSlice(tmp[17], false, false, "@"); err != nil {
+	if formatLog.Split1, err = extractStringSlice(tmp[17], false, false, "@"); err != nil {
 		return nil, errors.WithMessage(err, "illegal Split1")
 	}
-	if log.Split2, err = extractStringSlice(tmp[18], false, false, "@"); err != nil {
+	if formatLog.Split2, err = extractStringSlice(tmp[18], false, false, "@"); err != nil {
 		return nil, errors.WithMessage(err, "illegal Split2")
 	}
-	if log.XPeer, err = extractString(tmp[19], true, true); err != nil {
+	if formatLog.XPeer, err = extractString(tmp[19], true, true); err != nil {
 		return nil, errors.WithMessage(err, "illegal XPeer")
 	}
-	if log.DispatchDeleted, err = extractString(tmp[20], false, false); err != nil {
+	if formatLog.DispatchDeleted, err = extractString(tmp[20], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal DispatchDeleted")
 	}
-	if log.InternalHitStatus, err = extractString(tmp[21], false, false); err != nil {
+	if formatLog.InternalHitStatus, err = extractString(tmp[21], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal InternalHitStatus")
 	}
-	if log.HierarchyStatus, err = extractString(tmp[22], false, false); err != nil {
+	if formatLog.HierarchyStatus, err = extractString(tmp[22], false, false); err != nil {
 		return nil, errors.WithMessage(err, "illegal HierarchyStatus")
 	}
-	if log.Ext, err = extractStringSlice(tmp[23], false, false, "@_@"); err != nil {
+	if formatLog.Ext, err = extractStringSlice(tmp[23], false, false, "@_@"); err != nil {
 		return nil, errors.WithMessage(err, "illegal Ext")
 	}
 
 	//InternalExt
 
-	log.InternalExt.NetIP = net.ParseIP(log.ClientIp)
-	if log.InternalExt.NetIP == nil {
-		return nil, errors.New("illegal ip address: " + log.ClientIp)
+	formatLog.InternalExt.NetIP = net.ParseIP(formatLog.ClientIp)
+	if formatLog.InternalExt.NetIP == nil {
+		return nil, errors.New("illegal ip address: " + formatLog.ClientIp)
 	}
 
-	if useServerIp(log.InternalExt.NetIP) {
-		if len(log.Split1) >= 3 {
-			server := strings.Split(log.Split1[1], ":")
+	if useServerIp(formatLog.InternalExt.NetIP) {
+		if len(formatLog.Split1) >= 3 {
+			server := strings.Split(formatLog.Split1[1], ":")
 			if len(server) >= 2 {
 				port := server[len(server)-1]
-				serverIp := log.Split1[1][0 : len(log.Split1[1])-len(port)-1]
+				serverIp := formatLog.Split1[1][0 : len(formatLog.Split1[1])-len(port)-1]
 				serverNetIp := net.ParseIP(serverIp)
 				if serverNetIp != nil {
-					log.InternalExt.NetIP = serverNetIp
+					formatLog.InternalExt.NetIP = serverNetIp
 					goto continueParse
 				}
 			}
 		}
-		logrus.Warnln("can't parse server ip, continue to use client ip")
+		log.Global().Warn("can't parse server ip, continue to use client ip")
 	}
 continueParse:
-	log.InternalExt.Isp, log.InternalExt.Province, log.InternalExt.Country = IPLib.QueryIP(log.InternalExt.NetIP)
-	if (log.InternalExt.Country == "中国" || strings.HasPrefix(log.InternalExt.Country, "CHINA")) &&
-		log.InternalExt.Province != "澳门" && log.InternalExt.Province != "台湾" && log.InternalExt.Province != "香港" {
-		log.InternalExt.Asn = -1
+	formatLog.InternalExt.Isp, formatLog.InternalExt.Province, formatLog.InternalExt.Country = IPLib.QueryIP(formatLog.InternalExt.NetIP)
+	if (formatLog.InternalExt.Country == "中国" || strings.HasPrefix(formatLog.InternalExt.Country, "CHINA")) &&
+		formatLog.InternalExt.Province != "澳门" && formatLog.InternalExt.Province != "台湾" && formatLog.InternalExt.Province != "香港" {
+		formatLog.InternalExt.Asn = -1
 	} else {
-		log.InternalExt.Asn = int64(ASNLib.QueryASN(log.InternalExt.NetIP))
+		formatLog.InternalExt.Asn = int64(ASNLib.QueryASN(formatLog.InternalExt.NetIP))
 		if ViewLibFn != nil {
-			_, _, log.InternalExt.View = ViewLibFn().QueryIP(log.InternalExt.NetIP)
+			_, _, formatLog.InternalExt.View = ViewLibFn().QueryIP(formatLog.InternalExt.NetIP)
 		}
 	}
-	log.InternalExt.ParsedUrl, err = url.Parse(log.RequestUrl)
+	formatLog.InternalExt.ParsedUrl, err = url.Parse(formatLog.RequestUrl)
 	if err != nil {
-		return nil, errors.New("illegal RequestUrl: " + log.RequestUrl)
+		return nil, errors.New("illegal RequestUrl: " + formatLog.RequestUrl)
 	}
-	if log.InternalExt.ParsedTime, err = time.Parse("02/Jan/2006:15:04:05 -0700", log.RequestTime); err != nil {
-		return nil, errors.New("illegal RequestTime: " + log.RequestTime)
+	if formatLog.InternalExt.ParsedTime, err = time.Parse("02/Jan/2006:15:04:05 -0700", formatLog.RequestTime); err != nil {
+		return nil, errors.New("illegal RequestTime: " + formatLog.RequestTime)
 	}
-	log.InternalExt.IsIpv6 = log.InternalExt.NetIP.To4() == nil
-	log.InternalExt.IsParent = log.XPeer != `"-"`
-	log.InternalExt.IsHit = !strings.Contains(log.InternalHitStatus, "MISS")
-	log.InternalExt.IsHttps = log.InternalExt.ParsedUrl.Scheme == "https"
-	return log, nil
+	formatLog.InternalExt.MinutelyTime = formatLog.InternalExt.ParsedTime.Truncate(time.Minute).Unix()
+	formatLog.InternalExt.IsIpv6 = formatLog.InternalExt.NetIP.To4() == nil
+	formatLog.InternalExt.IsParent = formatLog.XPeer != `"-"`
+	formatLog.InternalExt.IsHit = !strings.Contains(formatLog.InternalHitStatus, "MISS")
+	formatLog.InternalExt.IsHttps = formatLog.InternalExt.ParsedUrl.Scheme == "https"
+	return formatLog, nil
 }
 
 func Init(ipDBPath string, ipv6DBPath string, asnDBPath string,

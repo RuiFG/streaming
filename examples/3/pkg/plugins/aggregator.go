@@ -6,31 +6,33 @@ import (
 )
 
 type aggregator[T proto.Message] struct {
-	plugin Plugin[T]
+	Plugin[T]
+}
+
+func (a *aggregator[T]) GetResult(acc map[string]T) *Output {
+	message := a.Plugin.ToMessage(acc)
+	bytes, err := proto.Marshal(message)
+	if err != nil {
+		return nil
+	}
+	return &Output{
+		Plugin: a.PluginName(),
+		Buffer: bytes,
+	}
 }
 
 func (a *aggregator[T]) Add(acc map[string]T, in *format.Log) map[string]T {
 	if acc == nil {
 		acc = map[string]T{}
 	}
-	if a.plugin.NeedCalculate(in) {
-		id := a.plugin.ID(in)
+	if a.Plugin.NeedCalculate(in) {
+		id := a.Plugin.ID(in)
 		v, ok := acc[id]
 		if !ok {
-			acc[id] = a.plugin.NewStruct(in)
+			acc[id] = a.Plugin.NewStruct(in)
 			v = acc[id]
 		}
-		a.plugin.Calculate(in, v)
+		a.Plugin.Calculate(in, v)
 	}
 	return acc
-}
-
-func (a *aggregator[T]) GetResult(acc map[string]T) []proto.Message {
-	result := make([]proto.Message, len(acc))
-	index := 0
-	for _, v := range acc {
-		result[index] = v
-		index++
-	}
-	return result
 }

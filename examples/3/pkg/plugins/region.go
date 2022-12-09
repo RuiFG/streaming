@@ -13,8 +13,7 @@ var PVContentType = []string{
 	"text/html", "text/asp", "text/plain",
 }
 
-type RegionPlugin struct {
-}
+type RegionPlugin struct{}
 
 func (r *RegionPlugin) NeedCalculate(log *format.Log) bool {
 	return true
@@ -60,10 +59,20 @@ func (r *RegionPlugin) Calculate(log *format.Log, v *pb.Region) {
 	}
 }
 
+func (r *RegionPlugin) ToMessage(acc map[string]*pb.Region) proto.Message {
+	result := make([]*pb.Region, len(acc))
+	index := 0
+	for _, v := range acc {
+		result[index] = v
+		index++
+	}
+	return &pb.RegionList{List: result}
+}
+
 func (r *RegionPlugin) PluginName() string {
 	return "region"
 }
 
-func RegionAggregator() window.AggregatorFn[*format.Log, map[string]*pb.Region, []proto.Message] {
-	return &aggregator[*pb.Region]{plugin: &RegionPlugin{}}
+func RegionAggregator() window.AggregatorFn[*format.Log, map[string]*pb.Region, *Output] {
+	return &aggregator[*pb.Region]{Plugin: &RegionPlugin{}}
 }

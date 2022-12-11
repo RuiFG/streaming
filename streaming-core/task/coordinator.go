@@ -4,7 +4,6 @@ import (
 	"github.com/RuiFG/streaming/streaming-core/common/status"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/store"
-	"math"
 	"time"
 )
 
@@ -12,6 +11,7 @@ type pendingBarrier struct {
 	Barrier
 	isDiscarded    bool
 	notYetAckTasks map[string]bool
+	timeout        *time.Timer
 }
 
 func newPendingBarrier(barrier Barrier, tasksToWaitFor []*Task) *pendingBarrier {
@@ -21,6 +21,7 @@ func newPendingBarrier(barrier Barrier, tasksToWaitFor []*Task) *pendingBarrier 
 		nyat[_task.Name()] = true
 	}
 	pc.notYetAckTasks = nyat
+	//only supports a timeout of more than milliseconds
 	return pc
 }
 
@@ -42,13 +43,12 @@ func (c *pendingBarrier) dispose() {
 
 // Coordinator ensure Task barrier coordination
 type Coordinator struct {
-	status             status.Status
-	done               chan struct{}
-	logger             log.Logger
-	tasksToTrigger     []*Task
-	tasksToWaitFor     []*Task
-	pendingBarriers    map[Barrier]*pendingBarrier
-	lastPendingBarrier *pendingBarrier
+	status          *status.Status
+	done            chan struct{}
+	logger          log.Logger
+	tasksToTrigger  []*Task
+	tasksToWaitFor  []*Task
+	pendingBarriers map[Barrier]*pendingBarrier
 
 	barrierSignalChan  chan Signal
 	triggerBarrierChan chan struct{}
@@ -60,27 +60,25 @@ type Coordinator struct {
 	maxConcurrentCheckpoints         int
 
 	minPauseBetweenCheckpoints int64
-	//TODO waiting for support
-	checkpointTimeout time.Duration
+	checkpointTimeout          time.Duration
 }
 
 func (c *Coordinator) Activate() {
 	go func() {
-		if status.CAP(&c.status, status.Ready, status.Running) {
+		if c.status.CAS(status.Ready, status.Running) {
 			c.logger.Infof("started")
 			var (
-				//init impossible timer.
-				lastBarrierTimeout = time.NewTimer(math.MaxInt64)
-				lastBarrier        Barrier
+				lastPendingBarrier *pendingBarrier
+				timeoutBarrierChan = make(chan Barrier)
 			)
 			for {
 			loop:
 				select {
 				case <-c.triggerBarrierChan:
 					timestamp := time.Now().UnixMilli()
-					if c.status.Running() && c.lastPendingBarrier != nil &&
-						timestamp < (c.lastPendingBarrier.CheckpointId+c.minPauseBetweenCheckpoints) {
-						c.logger.Warnf("the time to trigger a checkpoint is less than the min pause time between two checkpoints, dec checkpoint.")
+					if c.status.Running() && lastPendingBarrier != nil &&
+						timestamp < (lastPendingBarrier.CheckpointId+c.minPauseBetweenCheckpoints) {
+						c.logger.Warnf("the time to trigger a checkpoint is less than the min pause time between two checkpoints, cancel checkpoint.")
 						goto loop
 					}
 
@@ -95,18 +93,19 @@ func (c *Coordinator) Activate() {
 							goto loop
 						}
 					}
-					lastBarrier = Barrier{CheckpointId: timestamp}
-					lastBarrierTimeout.Stop()
-					lastBarrierTimeout = time.NewTimer(c.checkpointTimeout)
-					pending := newPendingBarrier(lastBarrier, c.tasksToWaitFor)
-					c.logger.Debugf("create pending barrier %d", lastBarrier.CheckpointId)
-					c.pendingBarriers[lastBarrier] = pending
-					c.lastPendingBarrier = pending
+					barrier := Barrier{CheckpointId: timestamp}
+					pending := newPendingBarrier(barrier, c.tasksToWaitFor)
+					c.logger.Debugf("create pending barrier %d", barrier.CheckpointId)
+					pending.timeout = time.AfterFunc(c.checkpointTimeout, func() {
+						timeoutBarrierChan <- barrier
+					})
+
+					c.pendingBarriers[barrier] = pending
+					lastPendingBarrier = pending
+
 					//let root task send out a barrier
 					for _, r := range c.tasksToTrigger {
-						go func(life *Task) {
-							life.TriggerBarrier(lastBarrier)
-						}(r)
+						r.TriggerBarrierAsync(barrier)
 					}
 
 				case signal := <-c.barrierSignalChan:
@@ -121,13 +120,13 @@ func (c *Coordinator) Activate() {
 					} else {
 						c.logger.Debugf("receive signal from %s for non existing id %d", signal.Name, signal.CheckpointId)
 					}
-				case <-lastBarrierTimeout.C:
-					pb, ok := c.pendingBarriers[lastBarrier]
-					c.logger.Debugf("checkpoint %d timeout", lastBarrier.CheckpointId)
+				case barrier := <-timeoutBarrierChan:
+					pb, ok := c.pendingBarriers[barrier]
+					c.logger.Debugf("checkpoint %d timeout", pb.CheckpointId)
 					if ok {
 						c.dec(pb, "coordinator")
 					} else {
-						c.logger.Debugf("timeout checkpoint %d does not exist", lastBarrier.CheckpointId)
+						c.logger.Debugf("timeout checkpoint %d does not exist", pb.CheckpointId)
 					}
 				case <-c.done:
 					c.logger.Info("coordinator stopped")
@@ -135,14 +134,23 @@ func (c *Coordinator) Activate() {
 				}
 			}
 		}
+
 	}()
 }
 
 func (c *Coordinator) Deactivate(savepoint bool) {
-	if status.CAP(&c.status, status.Running, status.Closed) {
-		if savepoint {
+	if savepoint {
+		switch {
+		case c.status.CAS(status.Running, status.Closing):
+			fallthrough
+		case c.status.Closed():
 			c.triggerBarrierChan <- struct{}{}
-		} else {
+		}
+	} else {
+		switch {
+		case c.status.CAS(status.Running, status.Closed):
+			fallthrough
+		case c.status.CAS(status.Closing, status.Closed):
 			close(c.done)
 		}
 	}
@@ -162,23 +170,24 @@ func (c *Coordinator) dec(pb *pendingBarrier, name string) {
 	c.logger.Debugf("receive dec from %s for id %d", name, pb.CheckpointId)
 	pb.dispose()
 	c.checkpointFailureNumber += 1
-	if c.status.Closed() {
-		c.logger.Warn("the coordinator is stopping,but last checkpoint failed,so triggered again")
-		c.triggerBarrierChan <- struct{}{}
-	}
+	delete(c.pendingBarriers, pb.Barrier)
+	c.notifyCancel(pb.Barrier)
 
 	if c.checkpointFailureNumber >= c.tolerableCheckpointFailureNumber {
 		c.logger.Error("the current number of failed checkpoints has exceeded the maximum tolerable number")
 		c.Deactivate(false)
 	}
-	delete(c.pendingBarriers, pb.Barrier)
-	c.notifyCancel(pb.Barrier)
-
+	if c.status.Closing() {
+		c.logger.Warn("the coordinator is closing, but last checkpoint failed,so triggered again")
+		c.Deactivate(true)
+	}
 }
 
 func (c *Coordinator) ack(pb *pendingBarrier, name string) {
 	c.logger.Debugf("receive ack from %s for id %d", name, pb.CheckpointId)
-	if pb.ack(name) && pb.isFullyAck() {
+	if pb.ack(name) &&
+		//when is full ack and pb hasn't timed out
+		pb.isFullyAck() && pb.timeout.Stop() {
 		err := c.storeBackend.Persist(pb.CheckpointId)
 		if err != nil {
 			c.logger.Errorf("cannot save checkpoint %d due to store error: %v", pb.CheckpointId, err)
@@ -193,10 +202,11 @@ func (c *Coordinator) ack(pb *pendingBarrier, name string) {
 		}
 		c.notifyComplete(pb.Barrier)
 		c.logger.Debugf("totally ack barrier %d", pb.CheckpointId)
+		if c.status.Closing() {
+			c.Deactivate(false)
+		}
 	}
-	if c.status.Closed() {
-		close(c.done)
-	}
+
 }
 
 func (c *Coordinator) notifyComplete(barrier Barrier) {
@@ -222,7 +232,7 @@ func NewCoordinator(
 	tolerableCheckpointFailureNumber int,
 ) *Coordinator {
 	return &Coordinator{
-		status:             status.Ready,
+		status:             status.NewStatus(status.Ready),
 		done:               make(chan struct{}),
 		logger:             log.Global().Named("coordinator"),
 		tasksToTrigger:     tasksToTrigger,

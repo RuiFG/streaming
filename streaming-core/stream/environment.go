@@ -42,16 +42,15 @@ var DefaultEnvironmentOptions = EnvironmentOptions{
 
 // Environment is stream environment, every stream application needs the support of the *Environment.
 type Environment struct {
-	logger            log.Logger
 	options           EnvironmentOptions
+	logger            log.Logger
+	coordinator       *task.Coordinator
+	status            *status.Status
 	barrierSignalChan chan task.Signal
 	sourceInitFns     []sourceInitFn
-	coordinator       *task.Coordinator
 	storeBackend      store.Backend
-	allChainTasks     []*task.Task
 
-	status    status.Status
-	errorChan chan error
+	allChainTasks []*task.Task
 }
 
 func (e *Environment) addSourceInit(fn sourceInitFn) {
@@ -59,12 +58,14 @@ func (e *Environment) addSourceInit(fn sourceInitFn) {
 }
 
 func (e *Environment) Start() error {
-	var rootTasks []*task.Task
+	var (
+		rootTasks []*task.Task
+	)
 	if len(e.sourceInitFns) <= 0 {
 		return errors.Errorf("source init fn should not be empty")
 	}
 
-	if status.CAP(&e.status, status.Ready, status.Running) {
+	if e.status.CAS(status.Ready, status.Running) {
 		//0. check stream graph and print
 
 		//1. init all task
@@ -80,17 +81,23 @@ func (e *Environment) Start() error {
 				}
 			}
 		}
-
 		//2. start coordinator
 		e.coordinator = task.NewCoordinator(rootTasks, e.allChainTasks, e.storeBackend, e.barrierSignalChan,
 			e.options.MaxConcurrentCheckpoints, e.options.MinPauseBetweenCheckpoints, e.options.CheckpointTimeout, e.options.TolerableCheckpointFailureNumber)
 		e.coordinator.Activate()
-
+		go func() {
+			<-e.coordinator.Done()
+			_ = e.Stop(false)
+		}()
 		//3. start all chain task
 		for _, _task := range e.allChainTasks {
-			safe.GoChannel(_task.Daemon, e.errorChan)
+			go func(inn *task.Task) {
+				if err := safe.Run(inn.Daemon); err != nil {
+					e.logger.Errorw("failed to daemon ", "task", inn.Name(), "err", err)
+				}
+				_ = e.Stop(false)
+			}(_task)
 		}
-		e.startMonitor()
 		//4. waiting task running
 		for _, _task := range e.allChainTasks {
 			for !_task.Running() {
@@ -119,7 +126,7 @@ func (e *Environment) Options() EnvironmentOptions {
 }
 
 func (e *Environment) Stop(savepoint bool) error {
-	if status.CAP(&e.status, status.Running, status.Closed) {
+	if e.status.CAS(status.Running, status.Closed) {
 		if e.coordinator != nil {
 			e.coordinator.Deactivate(savepoint)
 			<-e.coordinator.Done()
@@ -131,16 +138,6 @@ func (e *Environment) Stop(savepoint bool) error {
 	}
 	return nil
 
-}
-
-func (e *Environment) startMonitor() {
-	go func() {
-		err := <-e.errorChan
-		if err != nil {
-			e.logger.Errorw("monitored task error", "err", err)
-		}
-		_ = e.Stop(false)
-	}()
 }
 
 func (e *Environment) startPeriodicCheckpoint() {
@@ -171,6 +168,6 @@ func New(options EnvironmentOptions) (*Environment, error) {
 		options:           options,
 		barrierSignalChan: make(chan task.Signal),
 		storeBackend:      storeBackend,
-		errorChan:         make(chan error),
+		status:            status.NewStatus(status.Ready),
 	}, nil
 }

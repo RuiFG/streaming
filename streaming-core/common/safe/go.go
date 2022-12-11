@@ -28,12 +28,13 @@ func Run(fn func() error) (err error) {
 	return err
 }
 
-func Go(fn func() error) chan error {
+func Go(fn func() error) <-chan error {
 	c := make(chan error)
 	go func() {
-		err := Run(fn)
-		c <- err
-		close(c)
+		if err := Run(fn); err != nil {
+			c <- err
+			close(c)
+		}
 	}()
 	return c
 }

@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"github.com/RuiFG/streaming/streaming-core/common/executor"
 	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/store"
@@ -10,8 +11,8 @@ type Context interface {
 	Logger() log.Logger
 	Store() store.Controller
 	TimerManager() *TimerManager
-	//Call will call func that are mutually exclusive
-	Call(func())
+	//Exec will call func that are mutually exclusive
+	Exec(func()) *executor.Executor
 }
 
 type CheckpointListener interface {

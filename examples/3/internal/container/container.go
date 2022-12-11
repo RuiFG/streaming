@@ -27,7 +27,9 @@ func Start(cmd *cobra.Command, args []string) {
 	}
 	log.Setup(log.DefaultOptions().WithOutputEncoder(log.ConsoleOutputEncoder).WithLevel(level))
 	option := stream.DefaultEnvironmentOptions
-	option.EnablePeriodicCheckpoint = 60 * time.Second
+	option.EnablePeriodicCheckpoint = 10 * time.Second
+	option.MinPauseBetweenCheckpoints = time.Millisecond
+	option.CheckpointTimeout = 30 * time.Second
 	option.CheckpointsDir = application.CheckpointsDir
 	env, err := stream.New(option)
 	if err != nil {

@@ -2,24 +2,35 @@ package status
 
 import "sync/atomic"
 
-type Status int64
+type Status uint32
 
-func (s Status) Ready() bool {
-	return s == Ready
+func (s *Status) CAS(from, to Status) bool {
+	return atomic.CompareAndSwapUint32((*uint32)(s), uint32(from), uint32(to))
 }
-func (s Status) Running() bool {
-	return s == Running
+
+func (s *Status) Ready() bool {
+	return *s == Ready
 }
-func (s Status) Closed() bool {
-	return s == Closed
+
+func (s *Status) Running() bool {
+	return *s == Running
+}
+
+func (s *Status) Closing() bool {
+	return *s == Closing
+}
+
+func (s *Status) Closed() bool {
+	return *s == Closed
 }
 
 const (
 	Ready Status = iota
 	Running
+	Closing
 	Closed
 )
 
-func CAP(statusPointer *Status, from, to Status) bool {
-	return atomic.CompareAndSwapInt64((*int64)(statusPointer), int64(from), int64(to))
+func NewStatus(status Status) *Status {
+	return &status
 }

@@ -184,7 +184,7 @@ func (d *TimerService[T]) advanceWatermarkTimestamp(timestamp int64) {
 
 func (d *TimerService[T]) advanceProcessingTimestamp(timestamp int64) {
 	//if processing timestamp, the agent gives it to task to execute
-	d.ctx.Call(func() {
+	d.ctx.Exec(func() {
 		for d.ProcessTimeCallbackQueue.Len() > 0 &&
 			d.ProcessTimeCallbackQueue.PeekTimer().Timestamp <= timestamp {
 			d.trigger.OnProcessingTime(d.ProcessTimeCallbackQueue.PopTimer())

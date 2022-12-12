@@ -2,9 +2,7 @@ module github.com/RuiFG/streaming/streaming-connector/mock-connector
 
 go 1.18
 
-replace github.com/RuiFG/streaming/streaming-core => ../../streaming-core
-
-require github.com/RuiFG/streaming/streaming-core v0.0.0
+require github.com/RuiFG/streaming/streaming-core v0.0.1
 
 require (
 	github.com/bwmarrin/snowflake v0.3.0 // indirect

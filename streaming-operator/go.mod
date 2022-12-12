@@ -2,10 +2,8 @@ module github.com/RuiFG/streaming/streaming-operator
 
 go 1.19
 
-replace github.com/RuiFG/streaming/streaming-core => ../streaming-core
-
 require (
-	github.com/RuiFG/streaming/streaming-core v0.0.0
+	github.com/RuiFG/streaming/streaming-core v0.0.1
 	github.com/pkg/errors v0.9.1
 )
 

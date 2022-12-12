@@ -1,3 +1,5 @@
+github.com/RuiFG/streaming/streaming-core v0.0.1 h1:Nc5WN1iJWrqOUcwws9bf29s1xlRVa262Lk5QcjYSyoo=
+github.com/RuiFG/streaming/streaming-core v0.0.1/go.mod h1:5EHoUTdiK4Ojay+8f2VGEXcXtaH/EYydvA3lpgzZiZs=
 github.com/benbjohnson/clock v1.1.0 h1:Q92kusRqC1XV2MjkWETPvjJVqKetz1OzxZB7mHJLju8=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/bwmarrin/snowflake v0.3.0 h1:xm67bEhkKh6ij1790JB83OujPR5CzNe8QuQqAgISZN0=

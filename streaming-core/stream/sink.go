@@ -11,12 +11,12 @@ type SinkStreamOptions[IN any] struct {
 }
 
 type SinkStream[IN any] struct {
-	OperatorStream
+	OperatorStream[any]
 }
 
 func ToSink[IN any](upstream Stream[IN], sinkOptions SinkStreamOptions[IN]) error {
 	sinkStream := &SinkStream[IN]{
-		OperatorStream{
+		OperatorStream[any]{
 			options: OperatorStreamOptions{
 				Name: sinkOptions.Name,
 				Operator: operator.OneInputOperatorToNormal[IN, any](
@@ -24,7 +24,7 @@ func ToSink[IN any](upstream Stream[IN], sinkOptions SinkStreamOptions[IN]) erro
 						Sink: sinkOptions.Sink,
 					}),
 			},
-			env:         upstream.Env(),
+			env:         upstream.Environment(),
 			upstreamMap: map[string]struct{}{},
 			once:        &sync.Once{},
 		},

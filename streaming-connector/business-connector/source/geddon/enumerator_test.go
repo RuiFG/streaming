@@ -30,7 +30,7 @@ func (m *mockContext) TimerManager() *TimerManager {
 	return nil
 }
 
-func (m *mockContext) Call(f func()) {
+func (m *mockContext) Exec(f func()) {
 	return
 }
 

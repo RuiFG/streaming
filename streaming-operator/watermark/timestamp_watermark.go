@@ -19,7 +19,7 @@ type WithOptions[T any] func(options *options[T]) error
 
 func WithBoundedOutOfOrderlinessWatermarkGenerator[T any](outOfOrderlinessMillisecond time.Duration) WithOptions[T] {
 	return func(options *options[T]) error {
-		if outOfOrderlinessMillisecond <= time.Millisecond {
+		if outOfOrderlinessMillisecond <= time.Millisecond && outOfOrderlinessMillisecond != 0 {
 			return errors.Errorf("outOfOrderlinessMillisecond should be more than milliseconds.")
 		}
 		options.generatorFn = &boundedOutOfOrderlinessWatermarkGeneratorFn[T]{

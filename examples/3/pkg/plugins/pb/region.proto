@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package pb;
+option go_package = "./pb";
+
+message Region{
+  int64 timestamp = 1;
+  string domain = 2;
+  string country = 3;
+  string isp = 4;
+  string province = 5;
+  bool is_parent = 6;
+  bool is_hit = 7;
+  bool is_ipv6 = 8;
+  bool is_https = 9;
+  int64 asn = 10;
+  string view = 11;
+  map<int64, int64> Requests = 12;
+  map<int64, int64> Traffic = 13;
+  map<int64, int64> TimeResponse = 14;
+  map<int64, int64> PV = 15;
+
+}
+
+message RegionList {
+  repeated Region  list = 1;
+}
+

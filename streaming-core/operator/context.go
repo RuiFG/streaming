@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"github.com/RuiFG/streaming/streaming-core/common/executor"
 	"github.com/RuiFG/streaming/streaming-core/log"
 	"github.com/RuiFG/streaming/streaming-core/store"
 )
@@ -9,7 +10,7 @@ type context struct {
 	storeController store.Controller
 	logger          log.Logger
 	timerManager    *TimerManager
-	callerChan      chan func()
+	callerChan      chan *executor.Executor
 }
 
 func (c *context) Store() store.Controller {
@@ -20,8 +21,10 @@ func (c *context) Logger() log.Logger {
 	return c.logger
 }
 
-func (c *context) Call(fn func()) {
-	c.callerChan <- fn
+func (c *context) Exec(fn func()) *executor.Executor {
+	newExecutor := executor.NewExecutor(fn)
+	c.callerChan <- newExecutor
+	return newExecutor
 }
 
 func (c *context) TimerManager() *TimerManager {
@@ -31,7 +34,7 @@ func (c *context) TimerManager() *TimerManager {
 func NewContext(
 	logger log.Logger,
 	controller store.Controller,
-	callerChan chan func(),
+	callerChan chan *executor.Executor,
 	manager *TimerManager,
 ) Context {
 	return &context{

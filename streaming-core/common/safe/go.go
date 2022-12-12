@@ -3,6 +3,7 @@ package safe
 import (
 	"fmt"
 	"github.com/pkg/errors"
+	"os"
 	"runtime/debug"
 )
 
@@ -11,11 +12,11 @@ import (
 func Run(fn func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Println(r)
+			_, _ = fmt.Fprintf(os.Stderr, "panic: %#v\n", r)
 			debug.PrintStack()
 			switch x := r.(type) {
 			case string:
-				err = errors.New(x)
+				err = fmt.Errorf(x)
 			case error:
 				err = x
 			default:
@@ -27,12 +28,13 @@ func Run(fn func() error) (err error) {
 	return err
 }
 
-func Go(fn func() error) chan error {
+func Go(fn func() error) <-chan error {
 	c := make(chan error)
 	go func() {
-		err := Run(fn)
-		c <- err
-		close(c)
+		if err := Run(fn); err != nil {
+			c <- err
+			close(c)
+		}
 	}()
 	return c
 }

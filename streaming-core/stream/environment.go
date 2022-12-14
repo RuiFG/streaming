@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-type environmentOptions struct {
+type EnvironmentOptions struct {
 	//periodic checkpoints, if set 0, will not be enabled
 	EnablePeriodicCheckpoint time.Duration
 	//checkpoint state storage directory
@@ -43,17 +43,17 @@ type environmentOptions struct {
 	LogOptions []zap.Option
 }
 
-type WithOptions func(options *environmentOptions) error
+type WithOptions func(options *EnvironmentOptions) error
 
 func WithPeriodicCheckpoint(interval time.Duration) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.EnablePeriodicCheckpoint = interval
 		return nil
 	}
 }
 
 func WithCheckpointDir(checkpointDir string) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.CheckpointsDir = checkpointDir
 		return nil
 	}
@@ -61,49 +61,49 @@ func WithCheckpointDir(checkpointDir string) WithOptions {
 }
 
 func WithCheckpointsNumRetained(checkpointsNumRetained int) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.CheckpointsNumRetained = checkpointsNumRetained
 		return nil
 	}
 }
 
 func WithMinPauseBetweenCheckpoints(minPauseBetweenCheckpoints time.Duration) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.MinPauseBetweenCheckpoints = minPauseBetweenCheckpoints
 		return nil
 	}
 }
 
 func WithTolerableCheckpointFailureNumber(tolerableCheckpointFailureNumber int) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.TolerableCheckpointFailureNumber = tolerableCheckpointFailureNumber
 		return nil
 	}
 }
 
 func WithMaxConcurrentCheckpoints(maxConcurrentCheckpoints int) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.MaxConcurrentCheckpoints = maxConcurrentCheckpoints
 		return nil
 	}
 }
 
 func WithCheckpointTimeout(checkpointTimeout time.Duration) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.CheckpointTimeout = checkpointTimeout
 		return nil
 	}
 }
 
 func WithBufferSize(bufferSize int) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.BufferSize = bufferSize
 		return nil
 	}
 }
 
 func WithMetrics(metricsOptions tally.ScopeOptions, reportInterval time.Duration) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.MetricsOptions = metricsOptions
 		options.MetricsReportInterval = reportInterval
 		return nil
@@ -111,7 +111,7 @@ func WithMetrics(metricsOptions tally.ScopeOptions, reportInterval time.Duration
 }
 
 func WithLog(core zapcore.Core, logOptions ...zap.Option) WithOptions {
-	return func(options *environmentOptions) error {
+	return func(options *EnvironmentOptions) error {
 		options.LogCore = core
 		options.LogOptions = logOptions
 		return nil
@@ -121,7 +121,7 @@ func WithLog(core zapcore.Core, logOptions ...zap.Option) WithOptions {
 // Environment is stream environment, every stream application needs the support of the *Environment.
 type Environment struct {
 	name              string
-	options           *environmentOptions
+	options           *EnvironmentOptions
 	status            *status.Status
 	coordinator       *task.Coordinator
 	barrierSignalChan chan task.Signal
@@ -211,6 +211,10 @@ func (e *Environment) initMetrics() {
 	}
 	e.scope, e.metricsCloser = tally.NewRootScope(e.options.MetricsOptions, e.options.MetricsReportInterval)
 
+}
+
+func (e *Environment) Options() EnvironmentOptions {
+	return *e.options
 }
 
 func (e *Environment) Start() (err error) {
@@ -320,7 +324,7 @@ func (e *Environment) startPeriodicCheckpoint() {
 }
 
 func New(name string, withOptions ...WithOptions) (*Environment, error) {
-	options := &environmentOptions{
+	options := &EnvironmentOptions{
 		EnablePeriodicCheckpoint:         0,
 		CheckpointsDir:                   ".",
 		CheckpointsNumRetained:           2,

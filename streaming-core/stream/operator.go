@@ -4,6 +4,7 @@ import (
 	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/RuiFG/streaming/streaming-core/task"
+	"github.com/pkg/errors"
 	"sync"
 )
 
@@ -78,7 +79,8 @@ func (o *OperatorStream[OUT]) init() {
 			Name:              o.options.Name,
 			BarrierSignalChan: o.env.barrierSignalChan,
 			BufferSize:        o.env.options.BufferSize,
-
+			Logger:            o.env.logger.Named("operator").Named(o.options.Name),
+			Scope:             o.env.scope.Tagged(map[string]string{"operator": o.options.Name}),
 			DataEmit: func(e task.Data) {
 				for _, emit := range emits {
 					emit(e)
@@ -127,5 +129,33 @@ func ApplyTwoInput[IN1, IN2 any, OUT any](leftUpstream Stream[IN1], rightUpstrea
 	rightUpstream.addDownstream(outputStream.Name(), outputStream.Init(1))
 	outputStream.addUpstream(leftUpstream.Name())
 	outputStream.addUpstream(rightUpstream.Name())
+	return outputStream, nil
+}
+
+// ApplyMultiInput only the same upstream types are supported, currently
+func ApplyMultiInput[T any](upstreams []Stream[T], streamOptions OperatorStreamOptions) (Stream[T], error) {
+	if len(upstreams) < 2 {
+		return nil, errors.Errorf("need more than two upstream operators, but %d", len(upstreams))
+	}
+	environment := upstreams[0].Environment()
+	for _, upstream := range upstreams[1:] {
+		if environment != upstream.Environment() {
+			return nil, ErrMultipleEnv
+		}
+	}
+
+	//add operator prefix
+	streamOptions.Name = "operator." + streamOptions.Name
+	outputStream := &OperatorStream[T]{
+		options:             streamOptions,
+		env:                 environment,
+		once:                &sync.Once{},
+		upstreamMap:         map[string]struct{}{},
+		downstreamInitFnMap: map[string]downstreamInitFn{},
+	}
+	for index, upstream := range upstreams {
+		upstream.addDownstream(outputStream.Name(), outputStream.Init(index))
+		outputStream.addUpstream(upstream.Name())
+	}
 	return outputStream, nil
 }

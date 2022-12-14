@@ -23,7 +23,7 @@ func (o *SourceOperatorWrap[OUT]) Open(ctx Context, collector element.Collector[
 		}); err == nil {
 			return
 		}
-		ctx.Logger().Warnf("source operator exited unexpectedly, restarting...")
+		ctx.Logger().Warn("source operator exited unexpectedly, restarting...")
 	}()
 	return nil
 }

@@ -1,6 +1,6 @@
-module github.com/RuiFG/streaming/streaming-connector/kafka-connector
+module github.com/RuiFG/streaming/streaming-connector
 
-go 1.18
+go 1.19
 
 require (
 	github.com/RuiFG/streaming/streaming-core v0.0.1

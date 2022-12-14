@@ -65,7 +65,7 @@ func Apply[T any](upstream stream.Stream[T], name string, withOptions ...WithOpt
 				BaseRichOperator: BaseRichOperator[T, any, T]{Rich: o.rich},
 			})
 	}
-	return stream.ApplyOneInput(upstream, stream.OperatorStreamOptions{
+	return stream.ApplyOneInput[T, T](upstream, stream.OperatorStreamOptions{
 		Name:     name,
 		Operator: normalOperator,
 	})

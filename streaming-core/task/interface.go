@@ -3,6 +3,8 @@ package task
 import (
 	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
+	"github.com/uber-go/tally/v4"
+	"go.uber.org/zap"
 )
 
 // Data like element.NormalElement
@@ -18,7 +20,9 @@ type internalData struct {
 type Options struct {
 	Name              string
 	Operator          operator.NormalOperator
-	BarrierSignalChan chan Signal
+	BarrierSignalChan chan<- Signal
+	Logger            *zap.Logger
+	Scope             tally.Scope
 
 	//sink DataEmit is nil
 	DataEmit Emit

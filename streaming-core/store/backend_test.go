@@ -11,7 +11,7 @@ func tempFSBackend(checkpointsNumRetained int) (Backend, error) {
 	if mkdirTemp, err := os.MkdirTemp("", ""); err != nil {
 		return nil, err
 	} else {
-		return NewFSBackend(zap.L(), mkdirTemp, checkpointsNumRetained, checkpointsNumRetained*3)
+		return NewFSBackend(zap.L(), mkdirTemp, checkpointsNumRetained)
 	}
 }
 
@@ -30,6 +30,6 @@ func TestFSBackendSaveAndGet(t *testing.T) {
 }
 
 func TestIteratorBucket(t *testing.T) {
-	backend, _ := NewFSBackend(zap.L(), "/Users/klein/GoLandProjects/athena/tmp", 1, 2)
+	backend, _ := NewFSBackend(zap.L(), "/Users/klein/GoLandProjects/athena/tmp", 1)
 	_ = backend.Close()
 }

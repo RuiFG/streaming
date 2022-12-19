@@ -2,6 +2,7 @@ package store
 
 import (
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	"os"
 	"testing"
 )
@@ -10,7 +11,7 @@ func tempFSBackend(checkpointsNumRetained int) (Backend, error) {
 	if mkdirTemp, err := os.MkdirTemp("", ""); err != nil {
 		return nil, err
 	} else {
-		return NewFSBackend(mkdirTemp, checkpointsNumRetained)
+		return NewFSBackend(zap.L(), mkdirTemp, checkpointsNumRetained, checkpointsNumRetained*3)
 	}
 }
 
@@ -26,4 +27,9 @@ func TestFSBackendSaveAndGet(t *testing.T) {
 	get, err = fsBackend.Get("tt")
 	assert.Nil(t, err)
 	assert.Equal(t, get, []byte{123, 123, 123})
+}
+
+func TestIteratorBucket(t *testing.T) {
+	backend, _ := NewFSBackend(zap.L(), "/Users/klein/GoLandProjects/athena/tmp", 1, 2)
+	_ = backend.Close()
 }

@@ -3,7 +3,7 @@ module github.com/RuiFG/streaming/streaming-connector
 go 1.19
 
 require (
-	github.com/RuiFG/streaming/streaming-core v0.1.0
+	github.com/RuiFG/streaming/streaming-core v0.1.1
 	github.com/Shopify/sarama v1.35.0
 )
 
@@ -28,7 +28,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/xujiajun/mmap-go v1.0.1 // indirect
-	github.com/xujiajun/nutsdb v0.11.0 // indirect
+	github.com/xujiajun/nutsdb v0.11.1 // indirect
 	github.com/xujiajun/utils v0.0.0-20220904132955-5f7c5b914235 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect

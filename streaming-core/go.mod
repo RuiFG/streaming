@@ -6,7 +6,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/stretchr/testify v1.8.0
 	github.com/uber-go/tally/v4 v4.1.4
-	github.com/xujiajun/nutsdb v0.11.0
+	github.com/xujiajun/nutsdb v0.11.1
 	go.uber.org/zap v1.24.0
 	google.golang.org/protobuf v1.28.1
 )

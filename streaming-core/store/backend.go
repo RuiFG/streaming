@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"github.com/xujiajun/nutsdb"
+	"go.uber.org/zap"
 	"sort"
 	"strconv"
 	"sync"
@@ -34,11 +35,15 @@ func NewMemoryBackend() Backend {
 }
 
 type fs struct {
-	db *nutsdb.DB
+	logger *zap.Logger
+	db     *nutsdb.DB
 	//storage stores all checkpoint state
 	storage *sync.Map
 	//checkpoints are currently completed checkpoint id sorted slice
-	checkpoints            []int64
+	checkpoints []int64
+	//checkpointsTotalNum
+	checkpointsTotalNum    int
+	checkpointsNumMerged   int
 	checkpointsNumRetained int
 }
 
@@ -92,9 +97,9 @@ func (r *fs) Persist(checkpointId int64) error {
 	} else {
 		r.checkpoints = append(r.checkpoints, checkpointId)
 
+		//1. persist checkpoint state into db
 		if err := r.db.Update(func(tx *nutsdb.Tx) error {
 			var err error
-			//1. persist checkpoint state into db
 			m.(*sync.Map).Range(func(name, state any) bool {
 				if err = tx.Put(
 					formatCheckpointId(checkpointId), []byte(name.(string)), state.([]byte), 0); err != nil {
@@ -102,25 +107,40 @@ func (r *fs) Persist(checkpointId int64) error {
 				}
 				return true
 			})
-			//2.clean up checkpoint status in db
-			var deletedCheckpointIds []int64
-			if len(r.checkpoints) > r.checkpointsNumRetained {
-				deletedCheckpointIds = r.checkpoints[:len(r.checkpoints)-r.checkpointsNumRetained]
-				r.checkpoints = r.checkpoints[len(r.checkpoints)-r.checkpointsNumRetained:]
-			}
-			for _, deletedCheckpointId := range deletedCheckpointIds {
-				if err = tx.DeleteBucket(nutsdb.DataStructureBPTree, formatCheckpointId(deletedCheckpointId)); err != nil {
-					return err
-				}
-			}
-			//3.clean up checkpoint status in memory
-			for _, deletedCheckpointId := range deletedCheckpointIds {
-				r.storage.Delete(deletedCheckpointId)
-			}
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to persist %d checkpoint state: %w", checkpointId, err)
 		}
+		r.checkpointsTotalNum += 1
+		//2.clean up expired checkpoint status in db
+		//3.clean up checkpoint status in memory
+		if r.checkpointsTotalNum%r.checkpointsNumRetained == 0 {
+			if err := r.db.Update(func(tx *nutsdb.Tx) error {
+				var deletedCheckpointIds []int64
+				if len(r.checkpoints) > r.checkpointsNumRetained {
+					deletedCheckpointIds = r.checkpoints[:len(r.checkpoints)-r.checkpointsNumRetained]
+					r.checkpoints = r.checkpoints[len(r.checkpoints)-r.checkpointsNumRetained:]
+				}
+				for _, deletedCheckpointId := range deletedCheckpointIds {
+					if err := tx.DeleteBucket(nutsdb.DataStructureBPTree, formatCheckpointId(deletedCheckpointId)); err != nil {
+						return err
+					}
+				}
+				for _, deletedCheckpointId := range deletedCheckpointIds {
+					r.storage.Delete(deletedCheckpointId)
+				}
+				return nil
+			}); err != nil {
+				r.logger.Warn("failed to clear up expired checkpoint data.", zap.Error(err))
+			}
+		}
+		if r.checkpointsTotalNum%r.checkpointsNumMerged == 0 {
+			//4.merge fs state
+			if err := r.db.Merge(); err != nil {
+				r.logger.Warn("failed to merge fs state.", zap.Error(err))
+			}
+		}
+
 	}
 	return nil
 }
@@ -151,7 +171,7 @@ func (r *fs) Close() error {
 	return r.db.Close()
 }
 
-func NewFSBackend(checkpointsDir string, checkpointsNumRetained int) (Backend, error) {
+func NewFSBackend(logger *zap.Logger, checkpointsDir string, checkpointsNumRetained int, checkpointsNumMerged int) (Backend, error) {
 	opts := nutsdb.DefaultOptions
 	opts.SegmentSize = 1 * nutsdb.GB
 	opts.Dir = checkpointsDir
@@ -160,10 +180,12 @@ func NewFSBackend(checkpointsDir string, checkpointsNumRetained int) (Backend, e
 		return nil, err
 	}
 	store := &fs{
+		logger:                 logger,
 		db:                     db,
 		storage:                &sync.Map{},
 		checkpoints:            []int64{},
 		checkpointsNumRetained: checkpointsNumRetained,
+		checkpointsNumMerged:   checkpointsNumMerged,
 	}
 	return store, store.init()
 }

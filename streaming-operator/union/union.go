@@ -50,14 +50,14 @@ func (o *operator[T]) Close() error {
 	return o.rich.Close()
 }
 
-func (o *operator[T]) ProcessElement(normalElement element.NormalElement, index int) {
-	switch e := normalElement.(type) {
+func (o *operator[T]) ProcessElement(e element.Element, index int) {
+	switch value := e.(type) {
 	case *element.Event[T]:
-		o.emit(e)
+		o.emit(value)
 	case element.Watermark:
-		o.processWatermark(e, index)
+		o.processWatermark(value, index)
 	case element.WatermarkStatus:
-		o.processWatermarkStatus(e, index)
+		o.processWatermarkStatus(value, index)
 	}
 }
 

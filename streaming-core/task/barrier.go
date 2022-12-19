@@ -22,6 +22,7 @@ type BarrierTrigger interface {
 }
 
 type BarrierListener interface {
+	NotifyBarrierCome(barrier Barrier)
 	NotifyBarrierComplete(barrier Barrier)
 	NotifyBarrierCancel(barrier Barrier)
 }

@@ -1,9 +1,9 @@
 package store
 
 import (
+	"fmt"
 	"github.com/RuiFG/streaming/streaming-core/store/pb"
 	"github.com/golang/protobuf/proto"
-	"github.com/pkg/errors"
 	"sync"
 )
 
@@ -16,12 +16,12 @@ type manager struct {
 
 func (m *manager) init() error {
 	if bytes, err := m.backend.Get(m.name); err != nil {
-		return errors.WithMessagef(err, "failed to get %s state manager's state", m.name)
+		return fmt.Errorf("failed to get %s state manager's state: %w", m.name, err)
 	} else {
 		if bytes != nil {
 			managerState := &pb.ManagerState{}
 			if err := proto.Unmarshal(bytes, managerState); err != nil {
-				return errors.WithMessagef(err, "failed to unmarshal %s state manager's state", m.name)
+				return fmt.Errorf("failed to unmarshal %s state manager's state: %w", m.name, err)
 			}
 			for namespace, controllerState := range managerState.Data {
 				m.mm[namespace] = &controller{mm: &sync.Map{}}
@@ -68,7 +68,7 @@ func (m *manager) Save(id int64) (err error) {
 			}
 		})
 		if err != nil {
-			return errors.WithMessage(err, "failed to save data")
+			return fmt.Errorf("failed to save data: %w", err)
 		}
 	}
 	if marshal, err := proto.Marshal(managerState); err != nil {

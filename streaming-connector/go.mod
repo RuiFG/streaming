@@ -3,7 +3,7 @@ module github.com/RuiFG/streaming/streaming-connector
 go 1.19
 
 require (
-	github.com/RuiFG/streaming/streaming-core v0.0.1
+	github.com/RuiFG/streaming/streaming-core v0.1.0
 	github.com/Shopify/sarama v1.35.0
 )
 
@@ -32,7 +32,6 @@ require (
 	github.com/xujiajun/utils v0.0.0-20220904132955-5f7c5b914235 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292 // indirect
 	golang.org/x/net v0.0.0-20220708220712-1185a9018129 // indirect
 	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect

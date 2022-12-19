@@ -2,8 +2,8 @@ package operator
 
 import (
 	"container/heap"
+	"fmt"
 	"github.com/RuiFG/streaming/streaming-core/store"
-	"github.com/pkg/errors"
 	"math"
 	"time"
 )
@@ -259,7 +259,7 @@ func GetTimerService[T comparable](ctx Context, name string, trigger TimerTrigge
 		(&service).startAdvanceProcessingTimestamp()
 		return service, nil
 	}); err != nil {
-		return nil, errors.WithMessage(err, "failed to init timer service")
+		return nil, fmt.Errorf("failed to init timer service:%w", err)
 	} else {
 		return timerServiceStateController.Pointer(), nil
 	}

@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"errors"
 	"github.com/RuiFG/streaming/streaming-core/element"
 	. "github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/stream"
@@ -35,7 +36,7 @@ type RichFn[T any] interface {
 }
 
 type operator[T any] struct {
-	BaseRichOperator[T, any, T]
+	BaseOperator[T, any, T]
 	Fn Fn[T]
 }
 
@@ -53,20 +54,13 @@ func Apply[T any](upstream stream.Stream[T], name string, withOptions ...WithOpt
 		}
 	}
 	if o.function == nil {
-		return nil, nil
-	}
-	var normalOperator NormalOperator
-	if o.rich == nil {
-		normalOperator = OneInputOperatorToNormal[T, T](&operator[T]{Fn: o.function})
-	} else {
-		normalOperator = OneInputOperatorToNormal[T, T](
-			&operator[T]{
-				Fn:               o.function,
-				BaseRichOperator: BaseRichOperator[T, any, T]{Rich: o.rich},
-			})
+		return nil, errors.New("function can't be nil")
 	}
 	return stream.ApplyOneInput[T, T](upstream, stream.OperatorStreamOptions{
-		Name:     name,
-		Operator: normalOperator,
+		Name: name,
+		Operator: OneInputOperatorToOperator[T, T](&operator[T]{
+			BaseOperator: BaseOperator[T, any, T]{Rich: o.rich},
+			Fn:           o.function,
+		}),
 	})
 }

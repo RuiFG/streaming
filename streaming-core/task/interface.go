@@ -19,7 +19,7 @@ type internalData struct {
 
 type Options struct {
 	Name              string
-	Operator          operator.NormalOperator
+	Operator          operator.Operator
 	BarrierSignalChan chan<- Signal
 	Logger            *zap.Logger
 	Scope             tally.Scope

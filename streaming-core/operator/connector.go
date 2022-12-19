@@ -1,9 +1,9 @@
 package operator
 
 import (
+	"fmt"
 	"github.com/RuiFG/streaming/streaming-core/common/safe"
 	"github.com/RuiFG/streaming/streaming-core/element"
-	"github.com/pkg/errors"
 )
 
 type SourceOperatorWrap[OUT any] struct {
@@ -14,7 +14,7 @@ type SourceOperatorWrap[OUT any] struct {
 func (o *SourceOperatorWrap[OUT]) Open(ctx Context, collector element.Collector[OUT]) error {
 	o.collector = collector
 	if err := o.Source.Open(ctx, collector); err != nil {
-		return errors.WithMessage(err, "failed to open source operator")
+		return fmt.Errorf("failed to open source operator: %w", err)
 	}
 	go func() {
 		if err := safe.Run(func() error {
@@ -23,7 +23,7 @@ func (o *SourceOperatorWrap[OUT]) Open(ctx Context, collector element.Collector[
 		}); err == nil {
 			return
 		}
-		ctx.Logger().Warn("source operator exited unexpectedly, restarting...")
+		ctx.Logger().Warn("source operator exited unexpectedly, restarting.")
 	}()
 	return nil
 }
@@ -54,7 +54,8 @@ type SinkOperatorWrap[IN any] struct {
 func (s *SinkOperatorWrap[IN]) Open(ctx Context, _ element.Collector[any]) error {
 	//sink operator collector is nil
 	if err := s.Sink.Open(ctx); err != nil {
-		return errors.WithMessage(err, "failed to open sink operator")
+
+		return fmt.Errorf("failed to open sink operator: %w", err)
 	}
 	return nil
 }

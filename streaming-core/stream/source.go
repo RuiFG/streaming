@@ -25,7 +25,7 @@ func FormSource[OUT any](env *Environment, sourceOptions SourceStreamOptions[OUT
 		OperatorStream: OperatorStream[OUT]{
 			options: OperatorStreamOptions{
 				Name: sourceOptions.Name,
-				Operator: operator.OneInputOperatorToNormal[any, OUT](&operator.SourceOperatorWrap[OUT]{
+				Operator: operator.OneInputOperatorToOperator[any, OUT](&operator.SourceOperatorWrap[OUT]{
 					Source: sourceOptions.Source,
 				}),
 			},

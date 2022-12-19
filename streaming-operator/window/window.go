@@ -9,7 +9,6 @@ import (
 	. "github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/RuiFG/streaming/streaming-core/stream"
-	"github.com/pkg/errors"
 )
 
 type operator[KEY comparable, IN, ACC, WIN, OUT any] struct {
@@ -37,12 +36,12 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) Open(ctx Context, collector element.C
 		func() map[Window]map[KEY]ACC {
 			return map[Window]map[KEY]ACC{}
 		}, nil, nil); err != nil {
-		return errors.WithMessage(err, "failed to init window state")
+		return fmt.Errorf("failed to init window state: %w", err)
 	} else {
 		a.state = stateController.Pointer()
 	}
 	if a.timerService, err = GetTimerService[KeyAndWindow[KEY]](ctx, "Window-timer", a); err != nil {
-		return errors.WithMessagef(err, "failed to get operator timer service")
+		return fmt.Errorf("failed to get operator timer service :%w", err)
 	}
 	a.windowCtx = &context[KEY]{
 		Controller:   a.Ctx.Store(),
@@ -199,12 +198,12 @@ func Apply[KEY comparable, IN, ACC, WIN, OUT any](upstream stream.Stream[IN], na
 	o := &options[KEY, IN, ACC, WIN, OUT]{}
 	for _, withOptionsFn := range withOptionsFns {
 		if err := withOptionsFn(o); err != nil {
-			return nil, errors.WithMessagef(err, "%s illegal parameter", name)
+			return nil, fmt.Errorf("%s illegal parameter: %w", name, err)
 		}
 	}
 	return stream.ApplyOneInput[IN, OUT](upstream, stream.OperatorStreamOptions{
 		Name: name,
-		Operator: OneInputOperatorToNormal[IN, OUT](&operator[KEY, IN, ACC, WIN, OUT]{
+		Operator: OneInputOperatorToOperator[IN, OUT](&operator[KEY, IN, ACC, WIN, OUT]{
 			BaseOperator:    BaseOperator[IN, any, OUT]{},
 			SelectorFn:      o.selectorFn,
 			TriggerFn:       o.triggerFn,

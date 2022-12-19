@@ -115,6 +115,7 @@ func (c *Coordinator) Activate() {
 					c.pendingBarriers[barrier] = pending
 					lastPendingBarrier = pending
 					c.currentCheckpointGauge.Update(float64(barrier.CheckpointId))
+					c.totalCheckpointCounter.Inc(1)
 					//let root task send out a barrier
 					for _, r := range c.tasksToTrigger {
 						r.TriggerBarrierAsync(barrier)

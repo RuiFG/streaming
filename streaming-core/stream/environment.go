@@ -231,7 +231,7 @@ func (e *Environment) Start() (err error) {
 		//0. check stream graph and print
 
 		//1. init all task
-		if e.storeBackend, err = store.NewFSBackend(e.logger.Named("stateBackend"), e.options.CheckpointsDir, e.options.CheckpointsNumRetained, e.options.CheckpointsNumRetained*3); err != nil {
+		if e.storeBackend, err = store.NewFSBackend(e.logger.Named("stateBackend"), e.options.CheckpointsDir, e.options.CheckpointsNumRetained); err != nil {
 			return fmt.Errorf("failed to new fs store backend: %w", err)
 		}
 

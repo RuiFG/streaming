@@ -1,12 +1,12 @@
 package stream
 
 import (
+	"errors"
 	"github.com/RuiFG/streaming/streaming-core/task"
-	"github.com/pkg/errors"
 )
 
 var (
-	ErrMultipleEnv = errors.New("cannot add streams from multiple environments")
+	ErrMultipleEnv = errors.New("can't add streams from multiple environments")
 )
 
 type Stream[T any] interface {

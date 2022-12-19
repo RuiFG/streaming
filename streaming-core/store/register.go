@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"github.com/pkg/errors"
 	"sync"
 )
 
@@ -33,7 +32,7 @@ func RegisterOrGet[T any](controller Controller, descriptor StateDescriptor[T]) 
 					serializer:   descriptor.Serializer,
 					deserializer: descriptor.Deserializer}
 				if t, err := descriptor.Deserializer(l.Payload); err != nil {
-					return nil, errors.WithMessage(err, "failed to deserialize state")
+					return nil, fmt.Errorf("failed to deserialize state: %w", err)
 				} else {
 					*vs.pointer = t
 					controller.Store(descriptor.Key, vs)
@@ -69,14 +68,14 @@ func GobRegisterOrGet[T any](controller Controller, key string, initializer Stat
 			var buffer bytes.Buffer
 			decoder := gob.NewEncoder(&buffer)
 			if err := decoder.Encode(&v); err != nil {
-				return serializePostProcessor(nil, errors.WithMessage(err, "failed to encode state"))
+				return serializePostProcessor(nil, fmt.Errorf("failed to encode state: %w", err))
 			}
 			return serializePostProcessor(buffer.Bytes(), nil)
 		},
 		Deserializer: func(v []byte) (T, error) {
 			vPointer := new(T)
 			if err := gob.NewDecoder(bytes.NewReader(v)).Decode(vPointer); err != nil {
-				return deserializePostProcessor(*vPointer, errors.WithMessage(err, "failed to decode gob bytes"))
+				return deserializePostProcessor(*vPointer, fmt.Errorf("failed to decode gob bytes: %w", err))
 			} else {
 				return deserializePostProcessor(*vPointer, nil)
 			}

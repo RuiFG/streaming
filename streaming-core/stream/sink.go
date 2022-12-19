@@ -19,7 +19,7 @@ func ToSink[IN any](upstream Stream[IN], sinkOptions SinkStreamOptions[IN]) erro
 		OperatorStream[any]{
 			options: OperatorStreamOptions{
 				Name: sinkOptions.Name,
-				Operator: operator.OneInputOperatorToNormal[IN, any](
+				Operator: operator.OneInputOperatorToOperator[IN, any](
 					&operator.SinkOperatorWrap[IN]{
 						Sink: sinkOptions.Sink,
 					}),

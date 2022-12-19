@@ -2,7 +2,6 @@ package store
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"github.com/xujiajun/nutsdb"
 	"sort"
 	"strconv"
@@ -49,14 +48,14 @@ func (r *fs) init() error {
 			r.checkpoints = append(r.checkpoints, parseCheckpointId(key))
 			return true
 		}); err != nil {
-			return errors.WithMessage(err, "unable to iterate checkpoint, the state maybe corrupted")
+			return fmt.Errorf("unable to iterate checkpoint, the state maybe corrupted: %w", err)
 		}
 		sort.Slice(r.checkpoints, func(i, j int) bool {
 			return r.checkpoints[i] < r.checkpoints[j]
 		})
 		for _, checkpointId := range r.checkpoints {
 			if entries, err := tx.GetAll(formatCheckpointId(checkpointId)); err != nil {
-				return errors.WithMessagef(err, "can't get %d checkpoint state", checkpointId)
+				return fmt.Errorf("failed to get %d checkpoint state: %w", checkpointId, err)
 			} else {
 				if len(entries) > 0 {
 					checkpointState := &sync.Map{}
@@ -120,7 +119,7 @@ func (r *fs) Persist(checkpointId int64) error {
 			}
 			return nil
 		}); err != nil {
-			return errors.WithMessagef(err, "can't persist %d checkpoint state", checkpointId)
+			return fmt.Errorf("failed to persist %d checkpoint state: %w", checkpointId, err)
 		}
 	}
 	return nil

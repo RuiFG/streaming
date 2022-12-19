@@ -2,7 +2,6 @@ package safe
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"os"
 	"runtime/debug"
 )
@@ -43,14 +42,6 @@ func GoChannel(fn func() error, errorChan chan<- error) {
 	go func() {
 		if err := Run(fn); err != nil {
 			errorChan <- err
-		}
-	}()
-}
-
-func GoChannelWithMessage(fn func() error, message string, errorChan chan<- error) {
-	go func() {
-		if err := Run(fn); err != nil {
-			errorChan <- errors.WithMessage(err, message)
 		}
 	}()
 }

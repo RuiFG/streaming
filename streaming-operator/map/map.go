@@ -30,7 +30,7 @@ func WithFn[IN, OUT any](fn Fn[IN, OUT]) WithOptions[IN, OUT] {
 type Fn[IN any, OUT any] func(event IN) OUT
 
 type operator[IN any, OUT any] struct {
-	BaseRichOperator[IN, any, OUT]
+	BaseOperator[IN, any, OUT]
 	Fn Fn[IN, OUT]
 }
 
@@ -48,18 +48,13 @@ func Apply[IN, OUT any](upstream stream.Stream[IN], name string, withOptions ...
 	if o.function == nil {
 		return nil, nil
 	}
-	var normalOperator NormalOperator
-	if o.rich == nil {
-		normalOperator = OneInputOperatorToNormal[IN, OUT](&operator[IN, OUT]{Fn: o.function})
-	} else {
-		normalOperator = OneInputOperatorToNormal[IN, OUT](
-			&operator[IN, OUT]{
-				Fn:               o.function,
-				BaseRichOperator: BaseRichOperator[IN, any, OUT]{Rich: o.rich},
-			})
-	}
+
 	return stream.ApplyOneInput[IN, OUT](upstream, stream.OperatorStreamOptions{
-		Name:     name,
-		Operator: normalOperator,
+		Name: name,
+		Operator: OneInputOperatorToOperator[IN, OUT](
+			&operator[IN, OUT]{
+				Fn:           o.function,
+				BaseOperator: BaseOperator[IN, any, OUT]{Rich: o.rich},
+			}),
 	})
 }

@@ -1,16 +1,16 @@
 package stream
 
 import (
+	"fmt"
 	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/RuiFG/streaming/streaming-core/task"
-	"github.com/pkg/errors"
 	"sync"
 )
 
 type OperatorStreamOptions struct {
 	Name     string
-	Operator operator.NormalOperator
+	Operator operator.Operator
 }
 
 type OperatorStream[OUT any] struct {
@@ -98,8 +98,6 @@ func (o *OperatorStream[OUT]) init() {
 
 func ApplyOneInput[IN, OUT any](upstream Stream[IN], streamOptions OperatorStreamOptions) (Stream[OUT], error) {
 
-	//add operator prefix
-	streamOptions.Name = "operator." + streamOptions.Name
 	outputStream := &OperatorStream[OUT]{
 		options:             streamOptions,
 		env:                 upstream.Environment(),
@@ -116,8 +114,6 @@ func ApplyTwoInput[IN1, IN2 any, OUT any](leftUpstream Stream[IN1], rightUpstrea
 	if leftUpstream.Environment() != rightUpstream.Environment() {
 		return nil, ErrMultipleEnv
 	}
-	//add operator prefix
-	streamOptions.Name = "operator." + streamOptions.Name
 	outputStream := &OperatorStream[OUT]{
 		options:             streamOptions,
 		env:                 leftUpstream.Environment(),
@@ -135,7 +131,7 @@ func ApplyTwoInput[IN1, IN2 any, OUT any](leftUpstream Stream[IN1], rightUpstrea
 // ApplyMultiInput only the same upstream types are supported, currently
 func ApplyMultiInput[T any](upstreams []Stream[T], streamOptions OperatorStreamOptions) (Stream[T], error) {
 	if len(upstreams) < 2 {
-		return nil, errors.Errorf("need more than two upstream operators, but %d", len(upstreams))
+		return nil, fmt.Errorf("need more than two upstream operators, but %d", len(upstreams))
 	}
 	environment := upstreams[0].Environment()
 	for _, upstream := range upstreams[1:] {

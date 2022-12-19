@@ -1,6 +1,8 @@
 package stream
 
 import (
+	"errors"
+	"fmt"
 	"github.com/RuiFG/streaming/streaming-core/common/safe"
 	"github.com/RuiFG/streaming/streaming-core/common/status"
 	"github.com/RuiFG/streaming/streaming-core/element/log"
@@ -8,7 +10,6 @@ import (
 	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/RuiFG/streaming/streaming-core/task"
-	"github.com/pkg/errors"
 	"github.com/uber-go/tally/v4"
 	"github.com/uber-go/tally/v4/multi"
 	"go.uber.org/zap"
@@ -152,7 +153,7 @@ func (e *Environment) MetricsStream() Stream[metrics.Metric] {
 			OperatorStream: OperatorStream[metrics.Metric]{
 				options: OperatorStreamOptions{
 					Name: "metrics",
-					Operator: operator.OneInputOperatorToNormal[any, metrics.Metric](&operator.SourceOperatorWrap[metrics.Metric]{
+					Operator: operator.OneInputOperatorToOperator[any, metrics.Metric](&operator.SourceOperatorWrap[metrics.Metric]{
 						Source: e.metricsSource,
 					}),
 				},
@@ -173,7 +174,7 @@ func (e *Environment) LogStream() Stream[log.Entry] {
 			OperatorStream: OperatorStream[log.Entry]{
 				options: OperatorStreamOptions{
 					Name: "log",
-					Operator: operator.OneInputOperatorToNormal[any, log.Entry](&operator.SourceOperatorWrap[log.Entry]{
+					Operator: operator.OneInputOperatorToOperator[any, log.Entry](&operator.SourceOperatorWrap[log.Entry]{
 						Source: e.logSource,
 					}),
 				},
@@ -222,7 +223,7 @@ func (e *Environment) Start() (err error) {
 		rootTasks []*task.Task
 	)
 	if len(e.sourceInitFns) <= 0 {
-		return errors.Errorf("metricsSource init fn should not be empty")
+		return errors.New("metricsSource init fn should not be empty")
 	}
 	if e.status.CAS(status.Ready, status.Running) {
 		e.initMetrics()
@@ -231,12 +232,12 @@ func (e *Environment) Start() (err error) {
 
 		//1. init all task
 		if e.storeBackend, err = store.NewFSBackend(e.options.CheckpointsDir, e.options.CheckpointsNumRetained); err != nil {
-			return errors.WithMessage(err, "failed to new fs store backend")
+			return fmt.Errorf("failed to new fs store backend: %w", err)
 		}
 
 		for _, initFn := range e.sourceInitFns {
 			if rootTask, chainTasks, err := initFn(); err != nil {
-				return errors.WithMessage(err, "failed to init task")
+				return fmt.Errorf("failed to init task: %w", err)
 			} else {
 				if rootTask != nil {
 					rootTasks = append(rootTasks, rootTask)
@@ -272,7 +273,7 @@ func (e *Environment) Start() (err error) {
 				select {
 				case <-e.coordinator.Done():
 					e.logger.Error("the current application has been stopped, interrupting task")
-					return errors.Errorf("unable to start the application")
+					return errors.New("unable to start the application")
 				default:
 					time.Sleep(10 * time.Millisecond)
 				}

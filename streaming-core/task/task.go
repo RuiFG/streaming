@@ -1,26 +1,27 @@
 package task
 
 import (
+	"fmt"
 	"github.com/RuiFG/streaming/streaming-core/common/executor"
 	"github.com/RuiFG/streaming/streaming-core/common/status"
 	"github.com/RuiFG/streaming/streaming-core/element"
 	"github.com/RuiFG/streaming/streaming-core/operator"
 	"github.com/RuiFG/streaming/streaming-core/store"
-	"github.com/pkg/errors"
 	"github.com/uber-go/tally/v4"
 	"go.uber.org/zap"
 	"sync"
+	"time"
 )
 
 type Task struct {
-	name           string
-	status         *status.Status
-	done           chan struct{}
-	logger         *zap.Logger
-	storeManager   store.Manager
-	scope          tally.Scope
-	executorChan   chan *executor.Executor
-	normalOperator operator.NormalOperator
+	name         string
+	status       *status.Status
+	done         chan struct{}
+	logger       *zap.Logger
+	storeManager store.Manager
+	scope        tally.Scope
+	executorChan chan *executor.Executor
+	operator     operator.Operator
 
 	rwMutex *sync.RWMutex
 
@@ -65,13 +66,13 @@ func (t *Task) Daemon() error {
 		t.elementEmit = t.Emit
 		t.barrierAligner = NewBarrierAligner(t, t, t.inputCount)
 
-		if err := t.normalOperator.Open(operator.NewContext(
+		if err := t.operator.Open(operator.NewContext(
 			t.logger,
 			t.scope,
 			t.storeManager.Controller(t.Name()),
 			t.executorChan, operator.NewTimerManager()),
 			t.elementEmit); err != nil {
-			return errors.WithMessage(err, "failed to start task")
+			return fmt.Errorf("failed to start task: %w", err)
 		}
 		t.logger.Info("started")
 		//TODO: use priority mailbox and discard rwMutex
@@ -105,7 +106,7 @@ func (t *Task) Running() bool {
 func (t *Task) Close() {
 	if t.status.CAS(status.Running, status.Closed) {
 		close(t.done)
-		if err := t.normalOperator.Close(); err != nil {
+		if err := t.operator.Close(); err != nil {
 			t.logger.Error("failed to close.", zap.Error(err))
 		}
 		t.logger.Info("stopped")
@@ -113,21 +114,15 @@ func (t *Task) Close() {
 
 }
 
-func (t *Task) Emit(element element.NormalElement) {
+func (t *Task) Emit(element element.Element) {
 	t.outputTotalCounter.Inc(1)
 	t.dataEmit(element)
-}
-
-func (t *Task) MutexEmit(e element.NormalElement) {
-	t.rwMutex.RLock()
-	t.Emit(e)
-	t.rwMutex.RUnlock()
 }
 
 // -------------------------------------Processor---------------------------------------------
 
 func (t *Task) ProcessData(data internalData) {
-	t.normalOperator.ProcessElement(data.eob, data.index)
+	t.operator.ProcessElement(data.eob, data.index)
 }
 
 // -------------------------------------BarrierTrigger---------------------------------------------
@@ -136,7 +131,12 @@ func (t *Task) TriggerBarrier(barrier Barrier) {
 	t.lastCheckpointGauge.Update(float64(barrier.CheckpointId))
 	//FIXME  the barrier ignored an event.
 	t.rwMutex.Lock()
-	t.elementEmit = t.MutexEmit
+	//lock emit
+	t.elementEmit = func(e element.Element) {
+		t.rwMutex.RLock()
+		t.Emit(e)
+		t.rwMutex.RUnlock()
+	}
 	t.NotifyBarrierCome(barrier)
 	t.Emit(barrier)
 	t.rwMutex.Unlock()
@@ -165,19 +165,19 @@ func (t *Task) TriggerBarrierAsync(barrier Barrier) {
 // -------------------------------------BarrierListener-------------------------------------
 
 func (t *Task) NotifyBarrierCome(barrier Barrier) {
-	t.normalOperator.NotifyCheckpointCome(barrier.CheckpointId)
+	t.operator.NotifyCheckpointCome(barrier.CheckpointId)
 
 }
 
 func (t *Task) NotifyBarrierComplete(barrier Barrier) {
 	t.executorChan <- executor.NewExecutor(func() {
-		t.normalOperator.NotifyCheckpointComplete(barrier.CheckpointId)
+		t.operator.NotifyCheckpointComplete(barrier.CheckpointId)
 	})
 }
 
 func (t *Task) NotifyBarrierCancel(barrier Barrier) {
 	t.executorChan <- executor.NewExecutor(func() {
-		t.normalOperator.NotifyCheckpointCancel(barrier.CheckpointId)
+		t.operator.NotifyCheckpointCancel(barrier.CheckpointId)
 	})
 
 }
@@ -191,7 +191,7 @@ func New(options Options) *Task {
 		storeManager:      options.StoreManager,
 		scope:             options.Scope,
 		executorChan:      make(chan *executor.Executor, options.BufferSize),
-		normalOperator:    options.Operator,
+		operator:          options.Operator,
 		rwMutex:           &sync.RWMutex{},
 		inputChan:         make(chan internalData, options.BufferSize),
 		inputCount:        0,
@@ -203,7 +203,7 @@ func New(options Options) *Task {
 		lastCheckpointGauge:        options.Scope.Gauge("last_checkpoint"),
 		failedCheckpointCounter:    options.Scope.Counter("failed_checkpoint"),
 		succeededCheckpointCounter: options.Scope.Counter("succeeded_checkpoint"),
-		executeHistogram:           options.Scope.Histogram("execute_duration", nil),
+		executeHistogram:           options.Scope.Histogram("execute_duration", tally.DurationBuckets{5 * time.Millisecond, 10 * time.Millisecond, 50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond, 500 * time.Millisecond, time.Second, 2 * time.Second, 5 * time.Second}),
 	}
 
 }

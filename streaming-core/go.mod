@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/golang/protobuf v1.5.2
-	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.0
 	github.com/uber-go/tally/v4 v4.1.4
 	github.com/xujiajun/nutsdb v0.11.0
@@ -15,6 +14,7 @@ require (
 require (
 	github.com/bwmarrin/snowflake v0.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/twmb/murmur3 v1.1.5 // indirect
 	github.com/xujiajun/mmap-go v1.0.1 // indirect

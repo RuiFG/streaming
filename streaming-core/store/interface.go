@@ -27,10 +27,6 @@ type StateController[T any] interface {
 	Clear()
 }
 
-type StateHandler[T any] interface {
-	Referer() *T
-}
-
 type Controller interface {
 	Range(func(key string, state State) bool)
 	Load(key string) (State, bool)

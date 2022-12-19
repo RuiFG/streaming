@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
 	"sync"
 )
 
@@ -42,7 +42,7 @@ func (s *state[T]) mirror() (mirrorState, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if bytes, err := s.serializer(*s.pointer); err != nil {
-		return mirrorState{}, errors.WithMessage(err, "failed to serialize state")
+		return mirrorState{}, fmt.Errorf("failed to serialize state: %w", err)
 	} else {
 		return mirrorState{
 			Type:    NonParallelizeState,

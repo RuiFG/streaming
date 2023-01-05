@@ -26,22 +26,3 @@ func Run(fn func() error) (err error) {
 	err = fn()
 	return err
 }
-
-func Go(fn func() error) <-chan error {
-	c := make(chan error)
-	go func() {
-		if err := Run(fn); err != nil {
-			c <- err
-			close(c)
-		}
-	}()
-	return c
-}
-
-func GoChannel(fn func() error, errorChan chan<- error) {
-	go func() {
-		if err := Run(fn); err != nil {
-			errorChan <- err
-		}
-	}()
-}

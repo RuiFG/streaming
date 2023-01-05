@@ -6,12 +6,14 @@ import (
 	"github.com/RuiFG/streaming/streaming-core/store"
 	"github.com/uber-go/tally/v4"
 	"go.uber.org/zap"
+	"sync"
 )
 
 type Context interface {
 	Logger() *zap.Logger
 	Scope() tally.Scope
 	Store() store.Controller
+	Locker() sync.Locker
 	TimerManager() *TimerManager
 	//Exec will call func that are mutually exclusive
 	Exec(func()) *executor.Executor

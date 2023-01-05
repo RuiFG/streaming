@@ -2,7 +2,6 @@ package operator
 
 import (
 	"fmt"
-	"github.com/RuiFG/streaming/streaming-core/common/safe"
 	"github.com/RuiFG/streaming/streaming-core/element"
 )
 
@@ -16,15 +15,7 @@ func (o *SourceOperatorWrap[OUT]) Open(ctx Context, collector element.Collector[
 	if err := o.Source.Open(ctx, collector); err != nil {
 		return fmt.Errorf("failed to open source operator: %w", err)
 	}
-	go func() {
-		if err := safe.Run(func() error {
-			o.Source.Run()
-			return nil
-		}); err == nil {
-			return
-		}
-		ctx.Logger().Warn("source operator exited unexpectedly, restarting.")
-	}()
+	go o.Source.Run()
 	return nil
 }
 

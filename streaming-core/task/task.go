@@ -20,10 +20,11 @@ type Task struct {
 	logger       *zap.Logger
 	storeManager store.Manager
 	scope        tally.Scope
+	//locker is task global locker, sourceEmit, processElement or execExecutor need hold it
+	locker       sync.Locker
 	executorChan chan *executor.Executor
-	operator     operator.Operator
 
-	rwMutex *sync.RWMutex
+	operator operator.Operator
 
 	inputChan  chan internalData
 	inputCount int
@@ -31,8 +32,7 @@ type Task struct {
 	barrierAligner    *BarrierAligner
 	barrierSignalChan chan<- Signal
 
-	elementEmit element.Emit
-	dataEmit    Emit
+	dataEmit Emit
 
 	//metrics
 	inputTotalCounter          tally.Counter
@@ -63,28 +63,30 @@ func (t *Task) InitEmit(index int) Emit {
 
 func (t *Task) Daemon() error {
 	if t.status.CAS(status.Ready, status.Running) {
-		t.elementEmit = t.Emit
 		t.barrierAligner = NewBarrierAligner(t, t, t.inputCount)
 
 		if err := t.operator.Open(operator.NewContext(
 			t.logger,
 			t.scope,
 			t.storeManager.Controller(t.Name()),
-			t.executorChan, operator.NewTimerManager()),
-			t.elementEmit); err != nil {
+			t.executorChan, operator.NewTimerManager(), t.locker),
+			t.Emit); err != nil {
 			return fmt.Errorf("failed to start task: %w", err)
 		}
 		t.logger.Info("started")
-		//TODO: use priority mailbox and discard rwMutex
+		//TODO: use priority mailbox
 		for {
 			select {
 			case <-t.done:
 				return nil
 			case exec := <-t.executorChan:
+				t.locker.Lock()
 				stopwatch := t.executeHistogram.Start()
 				exec.Exec()
 				stopwatch.Stop()
+				t.locker.Unlock()
 			case data := <-t.inputChan:
+				t.locker.Lock()
 				t.inputTotalCounter.Inc(1)
 				t.barrierAligner.Handler(data)
 				bufferSize := len(t.inputChan)
@@ -92,7 +94,7 @@ func (t *Task) Daemon() error {
 					t.inputTotalCounter.Inc(1)
 					t.barrierAligner.Handler(<-t.inputChan)
 				}
-
+				t.locker.Unlock()
 			}
 		}
 	}
@@ -129,18 +131,8 @@ func (t *Task) ProcessData(data internalData) {
 
 func (t *Task) TriggerBarrier(barrier Barrier) {
 	t.lastCheckpointGauge.Update(float64(barrier.CheckpointId))
-	//FIXME  the barrier ignored an event.
-	t.rwMutex.Lock()
-	//lock emit
-	t.elementEmit = func(e element.Element) {
-		t.rwMutex.RLock()
-		t.Emit(e)
-		t.rwMutex.RUnlock()
-	}
 	t.NotifyBarrierCome(barrier)
 	t.Emit(barrier)
-	t.rwMutex.Unlock()
-	t.elementEmit = t.Emit
 	message := ACK
 	if err := t.storeManager.Save(barrier.CheckpointId); err != nil {
 		t.failedCheckpointCounter.Inc(1)
@@ -192,7 +184,7 @@ func New(options Options) *Task {
 		scope:             options.Scope,
 		executorChan:      make(chan *executor.Executor, options.BufferSize),
 		operator:          options.Operator,
-		rwMutex:           &sync.RWMutex{},
+		locker:            &sync.Mutex{},
 		inputChan:         make(chan internalData, options.BufferSize),
 		inputCount:        0,
 		barrierSignalChan: options.BarrierSignalChan,

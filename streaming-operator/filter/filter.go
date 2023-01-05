@@ -30,11 +30,6 @@ func WithFn[T any](fn Fn[T]) WithOptions[T] {
 
 type Fn[T any] func(event T) bool
 
-type RichFn[T any] interface {
-	Rich
-	Apply(event T) bool
-}
-
 type operator[T any] struct {
 	BaseOperator[T, any, T]
 	Fn Fn[T]

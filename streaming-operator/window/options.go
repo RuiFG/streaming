@@ -2,6 +2,7 @@ package window
 
 import (
 	"errors"
+	"github.com/RuiFG/streaming/streaming-core/store"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type options[KEY comparable, IN, ACC, WIN, OUT any] struct {
 	assignerFn      AssignerFn[KEY, IN]
 	processWindowFn ProcessWindowFn[KEY, WIN, OUT]
 	aggregatorFn    AggregatorFn[IN, ACC, WIN]
+	stateDescriptor store.StateDescriptor[map[Window]map[KEY]ACC]
 	allowedLateness int64
 }
 
@@ -75,6 +77,7 @@ func WithAllowedLateness[KEY comparable, IN, ACC, WIN, OUT any](allowedLateness 
 		if allowedLateness < 0 {
 			return errors.New("allowedLateness can't less than 0")
 		}
+		opts.allowedLateness = allowedLateness
 		return nil
 	}
 }
@@ -115,4 +118,15 @@ func WithPassThroughProcess[KEY comparable, IN, ACC, OUT any]() WithOptions[KEY,
 		return nil
 	}
 
+}
+
+func WithStateDescriptor[KEY comparable, IN, ACC, WIN, OUT any](stateDescriptor store.StateDescriptor[map[Window]map[KEY]ACC]) WithOptions[KEY, IN, ACC, OUT, OUT] {
+	return func(opts *options[KEY, IN, ACC, OUT, OUT]) error {
+		if stateDescriptor.Key == "" || stateDescriptor.Serializer == nil ||
+			stateDescriptor.Deserializer == nil || stateDescriptor.Initializer == nil {
+			return errors.New("stateDescriptor value can't be nil")
+		}
+		opts.stateDescriptor = stateDescriptor
+		return nil
+	}
 }

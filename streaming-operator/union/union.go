@@ -39,15 +39,20 @@ func (o *operator[T]) NotifyCheckpointCancel(checkpointId int64) {
 }
 
 func (o *operator[T]) Open(ctx Context, emit element.Emit) error {
-	if err := o.rich.Open(ctx); err != nil {
-		return err
+	if o.rich != nil {
+		if err := o.rich.Open(ctx); err != nil {
+			return err
+		}
 	}
 	o.combineWatermark = NewCombineWatermark(o.inputCount)
 	return nil
 }
 
 func (o *operator[T]) Close() error {
-	return o.rich.Close()
+	if o.rich != nil {
+		return o.rich.Close()
+	}
+	return nil
 }
 
 func (o *operator[T]) ProcessElement(e element.Element, index int) {

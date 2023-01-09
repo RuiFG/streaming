@@ -1,6 +1,7 @@
 package window
 
 import (
+	"errors"
 	"fmt"
 	"github.com/RuiFG/streaming/streaming-core/element"
 	"math"
@@ -195,11 +196,31 @@ func (a *operator[KEY, IN, ACC, WIN, OUT]) cleanupTime(window Window) int64 {
 }
 
 func Apply[KEY comparable, IN, ACC, WIN, OUT any](upstream stream.Stream[IN], name string, withOptionsFns ...WithOptions[KEY, IN, ACC, WIN, OUT]) (stream.Stream[OUT], error) {
-	o := &options[KEY, IN, ACC, WIN, OUT]{}
+	o := &options[KEY, IN, ACC, WIN, OUT]{
+		stateDescriptor: store.GenerateGobStateDescriptor[map[Window]map[KEY]ACC]("gob-window-aggregate-Key-state",
+			func() map[Window]map[KEY]ACC {
+				return map[Window]map[KEY]ACC{}
+			}, nil, nil),
+	}
 	for _, withOptionsFn := range withOptionsFns {
 		if err := withOptionsFn(o); err != nil {
 			return nil, fmt.Errorf("%s illegal parameter: %w", name, err)
 		}
+	}
+	if o.selectorFn == nil {
+		return nil, errors.New("selectorFn can't be nil")
+	}
+	if o.triggerFn == nil {
+		return nil, errors.New("triggerFn can't be nil")
+	}
+	if o.assignerFn == nil {
+		return nil, errors.New("assignerFn can't be nil")
+	}
+	if o.aggregatorFn == nil {
+		return nil, errors.New("aggregatorFn can't be nil")
+	}
+	if o.processWindowFn == nil {
+		return nil, errors.New("processWindowFn can't be nil")
 	}
 	return stream.ApplyOneInput[IN, OUT](upstream, stream.OperatorStreamOptions{
 		Name: name,

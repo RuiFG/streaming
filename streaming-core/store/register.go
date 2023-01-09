@@ -53,6 +53,12 @@ func RegisterOrGet[T any](controller Controller, descriptor StateDescriptor[T]) 
 func GobRegisterOrGet[T any](controller Controller, key string, initializer StateInitializer[T],
 	serializePostProcessor StateSerializePostProcessor[T],
 	deserializePostProcessor StateDeserializePostProcessor[T]) (StateController[T], error) {
+	return RegisterOrGet[T](controller, GenerateGobStateDescriptor[T](key, initializer, serializePostProcessor, deserializePostProcessor))
+}
+
+func GenerateGobStateDescriptor[T any](key string, initializer StateInitializer[T],
+	serializePostProcessor StateSerializePostProcessor[T],
+	deserializePostProcessor StateDeserializePostProcessor[T]) StateDescriptor[T] {
 	if serializePostProcessor == nil {
 		serializePostProcessor = func(i []byte, err error) ([]byte, error) {
 			return i, err
@@ -61,7 +67,7 @@ func GobRegisterOrGet[T any](controller Controller, key string, initializer Stat
 	if deserializePostProcessor == nil {
 		deserializePostProcessor = func(v T, err error) (T, error) { return v, err }
 	}
-	return RegisterOrGet[T](controller, StateDescriptor[T]{
+	return StateDescriptor[T]{
 		Key:         key,
 		Initializer: initializer,
 		Serializer: func(v T) ([]byte, error) {
@@ -80,5 +86,5 @@ func GobRegisterOrGet[T any](controller Controller, key string, initializer Stat
 				return deserializePostProcessor(*vPointer, nil)
 			}
 		},
-	})
+	}
 }

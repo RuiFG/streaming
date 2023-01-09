@@ -44,6 +44,7 @@ func (o *operator[T]) Open(ctx Context, emit element.Emit) error {
 			return err
 		}
 	}
+	o.emit = emit
 	o.combineWatermark = NewCombineWatermark(o.inputCount)
 	return nil
 }
